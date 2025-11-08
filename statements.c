@@ -2157,7 +2157,7 @@ int findlabel(char **statement, int i)
 	size_t token_length = strlen(statement[i]);
 	if (token_length && statement[i][token_length - 1] == ':')
 	{
-	    /* Allow `then SomeLabel: rem ...` without forcing whitespace before the colon. */
+	    /* Serve colon couture so `then SomeLabel: rem ...` still hits the runway. */
 	    if ((statement[i + 1][0] == '\0') || (!strncmp(statement[i + 1], "rem\0", 3)))
 		return 0;
 	}

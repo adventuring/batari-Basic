@@ -40,6 +40,27 @@ and the sample programs included in this release.
 
 ____________________________________________________________________________
 
+COMPILER CONFIGURATION:
+______________________
+
+The compiler caches symbol redefinitions in an internal buffer. By default it
+reserves space for 2048 entries and automatically expands when additional
+capacity is required. You can override the initial capacity by exporting the
+environment variable `BB_MAX_REDEFS` before invoking `2600bas`. Valid values
+range from 128 to 65536 entries. Values outside that range are clamped to the
+nearest supported boundary.
+
+Example (Linux/macOS):
+
+    export BB_MAX_REDEFS=4096
+    2600bas mygame.bas
+
+Example (Windows PowerShell):
+
+    $env:BB_MAX_REDEFS = 4096
+    2600bas mygame.bas
+
+____________________________________________________________________________
 
 GETTING STARTED:
 ________________

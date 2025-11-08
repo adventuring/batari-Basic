@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
 #include <unistd.h>
 #include "statements.h"
 #include "keywords.h"
@@ -97,6 +98,71 @@ static void bb_ensure_define_capacity(size_t index)
 
         bb_define_capacity = new_capacity;
     }
+}
+
+static int bb_token_equals(const char *token, const char *word)
+{
+    size_t i = 0;
+
+    if (!token || !word)
+	return 0;
+
+    while (token[i] && word[i])
+    {
+	if (tolower((unsigned char) token[i]) != tolower((unsigned char) word[i]))
+	    return 0;
+	i++;
+    }
+
+    return (token[i] == '\0') && (word[i] == '\0');
+}
+
+static const char *bb_next_token(const char *line, char *token, size_t maxlen)
+{
+    size_t out = 0;
+    const unsigned char *cursor = (const unsigned char *) line;
+
+    while (*cursor && isspace(*cursor))
+	cursor++;
+
+    while (*cursor && !isspace(*cursor) && (out + 1 < maxlen))
+    {
+	token[out++] = (char) *cursor++;
+    }
+
+    token[out] = '\0';
+
+    if (out > 0 && token[out - 1] == ':')
+	token[out - 1] = '\0';
+
+    return (const char *) cursor;
+}
+
+static int bb_should_convert_commas(const char *line)
+{
+    char tokens[4][BB_MAX_LINE];
+    const char *cursor = line;
+    int i;
+
+    for (i = 0; i < 4; ++i)
+    {
+	cursor = bb_next_token(cursor, tokens[i], sizeof(tokens[i]));
+    }
+
+    if (bb_token_equals(tokens[0], "rem"))
+	return 0;
+
+    if (bb_token_equals(tokens[0], "on")
+	&& (bb_token_equals(tokens[2], "goto")
+	    || bb_token_equals(tokens[2], "gosub")))
+	return 1;
+
+    if (bb_token_equals(tokens[1], "on")
+	&& (bb_token_equals(tokens[3], "goto")
+	    || bb_token_equals(tokens[3], "gosub")))
+	return 1;
+
+    return 0;
 }
 
 extern int bank;
@@ -268,10 +334,11 @@ int main(int argc, char *argv[])
 	k = 0;
 
 // look for spaces, reject multiples
+	int convert_commas = bb_should_convert_commas(code);
 	while (code[i] != '\0')
 	{
 	    single = code[i++];
-	    if (single == ',')
+	    if (single == ',' && convert_commas)
 	    {
 		// Treat commas exactly like spaces so constructs such as
 		// "on x goto label0, label1" parse identically to the
