@@ -10,6 +10,95 @@
 #define BB_VERSION_INFO "batari Basic v1.9 (c)2025\n"
 #define BB_MAX_LINE 2048
 
+static char (*bb_define_names)[BB_REDEF_ENTRY_LENGTH] = NULL;
+static char (*bb_define_values)[BB_REDEF_ENTRY_LENGTH] = NULL;
+static size_t bb_define_capacity = 0;
+
+static void bb_allocate_define_storage(size_t capacity)
+{
+    if (capacity < BB_MIN_REDEF_CAPACITY)
+    {
+        capacity = BB_MIN_REDEF_CAPACITY;
+    }
+    if (capacity > BB_MAX_REDEF_CAPACITY)
+    {
+        capacity = BB_MAX_REDEF_CAPACITY;
+    }
+
+    bb_define_names =
+        (char (*)[BB_REDEF_ENTRY_LENGTH]) calloc(capacity, sizeof(*bb_define_names));
+    bb_define_values =
+        (char (*)[BB_REDEF_ENTRY_LENGTH]) calloc(capacity, sizeof(*bb_define_values));
+    if (!bb_define_names || !bb_define_values)
+    {
+        fprintf(stderr,
+                "ERROR: Unable to allocate space for %zu symbol definitions.\n",
+                capacity);
+        exit(1);
+    }
+    bb_define_capacity = capacity;
+}
+
+static void bb_ensure_define_capacity(size_t index)
+{
+    size_t minimum_capacity = index + 1;
+
+    if (bb_define_capacity == 0)
+    {
+        size_t initial = bb_get_configured_redefinition_limit();
+        if (initial < minimum_capacity)
+        {
+            initial = minimum_capacity;
+        }
+        bb_allocate_define_storage(initial);
+    }
+
+    while (minimum_capacity > bb_define_capacity)
+    {
+        size_t new_capacity = bb_define_capacity * 2;
+        if (new_capacity < bb_define_capacity || new_capacity > BB_MAX_REDEF_CAPACITY)
+        {
+            new_capacity = BB_MAX_REDEF_CAPACITY;
+        }
+        if (new_capacity < minimum_capacity)
+        {
+            fprintf(stderr,
+                    "ERROR: Maximum number of symbol definitions (%d) exceeded.\n",
+                    BB_MAX_REDEF_CAPACITY);
+            exit(1);
+        }
+
+        char (*new_names)[BB_REDEF_ENTRY_LENGTH] =
+            (char (*)[BB_REDEF_ENTRY_LENGTH]) realloc(bb_define_names,
+                                                      new_capacity * sizeof(*bb_define_names));
+        char (*new_values)[BB_REDEF_ENTRY_LENGTH] =
+            (char (*)[BB_REDEF_ENTRY_LENGTH]) realloc(bb_define_values,
+                                                      new_capacity * sizeof(*bb_define_values));
+
+        if (!new_names || !new_values)
+        {
+            fprintf(stderr,
+                    "ERROR: Unable to expand symbol definition storage to %zu entries.\n",
+                    new_capacity);
+            exit(1);
+        }
+
+        bb_define_names = new_names;
+        bb_define_values = new_values;
+
+        {
+            size_t i;
+            for (i = bb_define_capacity; i < new_capacity; ++i)
+            {
+                bb_define_names[i][0] = '\0';
+                bb_define_values[i][0] = '\0';
+            }
+        }
+
+        bb_define_capacity = new_capacity;
+    }
+}
+
 extern int bank;
 
 extern int bs;
@@ -33,8 +122,6 @@ int main(int argc, char *argv[])
     char *includes_file = "default.inc";
     char *filename = "2600basic_variable_redefs.h";
     char *path = 0;
-    char def[500][100];
-    char defr[500][100];
     char finalcode[BB_MAX_LINE];
     char *codeadd;
     char mycode[BB_MAX_LINE];
@@ -70,6 +157,8 @@ int main(int argc, char *argv[])
 
     playfield_index[0]=0;
 
+    bb_allocate_define_storage(bb_get_configured_redefinition_limit());
+
     statement = (char **) malloc(sizeof(char *) * 200);
     for (i = 0; i < 200; ++i)
     {
@@ -102,10 +191,7 @@ int main(int argc, char *argv[])
 	{			// found a define
 	    int current_pos = k_def_search + 5; // current_pos now points to start of define name.
 
-	    if (defi >= 499) { // Max 500 defines (0-499)
-	        fprintf(stderr, "(%d) ERROR: Maximum number of defines (500) reached.\n", bbgetline());
-	        exit(1);
-	    }
+	    bb_ensure_define_capacity((size_t) defi);
 
 	    for (j = 0; current_pos < BB_MAX_LINE - 1 && code[current_pos] != ' ' && code[current_pos] != '\0' && code[current_pos] != '\n' && code[current_pos] != '\r'; current_pos++)
 	    {
@@ -113,9 +199,9 @@ int main(int argc, char *argv[])
 	            fprintf(stderr, "(%d) ERROR: Define name too long (max 99 chars).\n", bbgetline());
 		    exit(1);
 		}
-		def[defi][j++] = code[current_pos];
+		bb_define_names[defi][j++] = code[current_pos];
 	    }
-	    def[defi][j] = '\0';
+	    bb_define_names[defi][j] = '\0';
 
 	    if (j == 0) { // Empty define name
 	        fprintf(stderr, "(%d) ERROR: Malformed define statement. Empty define name.\n", bbgetline());
@@ -124,7 +210,7 @@ int main(int argc, char *argv[])
 
 	    // Expect " = " sequence after define name
 	    if (!(current_pos <= BB_MAX_LINE - 3 && code[current_pos] == ' ' && code[current_pos+1] == '=' && code[current_pos+2] == ' ')) {
-	        fprintf(stderr, "(%d) ERROR: Malformed define statement. Expected \" = \" after define name '%s'.\n", bbgetline(), def[defi]);
+	        fprintf(stderr, "(%d) ERROR: Malformed define statement. Expected \" = \" after define name '%s'.\n", bbgetline(), bb_define_names[defi]);
 		exit(1);
 	    }
 	    current_pos += 3; // Skip " = "
@@ -132,14 +218,14 @@ int main(int argc, char *argv[])
 	    for (j = 0; current_pos < BB_MAX_LINE - 1 && code[current_pos] != '\0' && code[current_pos] != '\n' && code[current_pos] != '\r'; current_pos++)
 	    {
 	        if (j >= 99) {
-	            fprintf(stderr, "(%d) ERROR: Define replacement string too long (max 99 chars) for define '%s'.\n", bbgetline(), def[defi]);
+	            fprintf(stderr, "(%d) ERROR: Define replacement string too long (max 99 chars) for define '%s'.\n", bbgetline(), bb_define_names[defi]);
 	            exit(1);
 	        }
-	        defr[defi][j++] = code[current_pos];
+	        bb_define_values[defi][j++] = code[current_pos];
 	    }
-	    defr[defi][j] = '\0';
-	    removeCR(defr[defi]);
-	    printf (";PARSED_DEFINE: .%s. = .%s.\n", def[defi], defr[defi]); // Clarified debug print
+	    bb_define_values[defi][j] = '\0';
+	    removeCR(bb_define_values[defi]);
+	    printf (";PARSED_DEFINE: .%s. = .%s.\n", bb_define_names[defi], bb_define_values[defi]); // Clarified debug print
 	    defi++;
 	}
 	else if (defi) // This 'i' refers to the outer loop variable for iterating through existing defines
@@ -158,14 +244,14 @@ int main(int argc, char *argv[])
 				bbgetline());
 			exit(1);
 		    }
-		    codeadd = strstr (mycode, def[def_idx]);
+		    codeadd = strstr (mycode, bb_define_names[def_idx]);
 		    if (codeadd == NULL)
 			break;
 		    for (j = 0; j < BB_MAX_LINE; ++j)
 			finalcode[j] = '\0';
 		    strncpy(finalcode, mycode, strlen(mycode) - strlen(codeadd));
-		    strcat (finalcode, defr[def_idx]);
-		    strcat (finalcode, codeadd + strlen (def[def_idx]));
+		    strcat (finalcode, bb_define_values[def_idx]);
+		    strcat (finalcode, codeadd + strlen (bb_define_names[def_idx]));
 		    strcpy(mycode, finalcode);
 		}
 	    }

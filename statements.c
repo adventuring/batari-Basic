@@ -5,8 +5,17 @@
 #include <string.h>
 #include <math.h>
 #include <stdarg.h>
+#include <errno.h>
 #include "statements.h"
 #include "keywords.h"
+
+static size_t configured_redef_limit = 0;
+static size_t redefined_capacity = 0;
+static char (*redefined_variables)[BB_REDEF_ENTRY_LENGTH] = NULL;
+
+static void bb_allocate_redefinition_storage(size_t capacity);
+static void bb_ensure_redefinition_capacity_for_index(size_t index);
+static char *bb_next_redefinition_slot(void);
 
 int includesfile_already_done = 0;
 int decimal = 0;
@@ -49,7 +58,6 @@ int pfdata[100][256];
 char sprite_data[5000][50];
 int playfield_index[50];
 char includespath[500];
-char redefined_variables[500][100];
 char constants[MAXCONSTANTS][100];
 char forvar[50][50];
 char forlabel[50][50];
@@ -59,6 +67,142 @@ char fixpoint44[2][50][50];
 char fixpoint88[2][50][50];
 char user_includes[1000];
 char Areg[50];
+
+size_t bb_get_configured_redefinition_limit(void)
+{
+    if (configured_redef_limit)
+    {
+        return configured_redef_limit;
+    }
+
+    {
+        const char *env = getenv(BB_REDEF_ENV_VAR);
+        if (env && *env)
+        {
+            errno = 0;
+            char *endptr = NULL;
+            long parsed = strtol(env, &endptr, 10);
+            if (!errno && endptr && endptr != env)
+            {
+                if (parsed < (long) BB_MIN_REDEF_CAPACITY)
+                {
+                    fprintf(stderr,
+                            "Warning: %s value '%s' below minimum (%d). Using minimum instead.\n",
+                            BB_REDEF_ENV_VAR,
+                            env,
+                            BB_MIN_REDEF_CAPACITY);
+                    parsed = BB_MIN_REDEF_CAPACITY;
+                }
+                else if (parsed > (long) BB_MAX_REDEF_CAPACITY)
+                {
+                    fprintf(stderr,
+                            "Warning: %s value '%s' above maximum (%d). Using maximum instead.\n",
+                            BB_REDEF_ENV_VAR,
+                            env,
+                            BB_MAX_REDEF_CAPACITY);
+                    parsed = BB_MAX_REDEF_CAPACITY;
+                }
+                configured_redef_limit = (size_t) parsed;
+                return configured_redef_limit;
+            }
+
+            fprintf(stderr,
+                    "Warning: Unable to parse %s value '%s'. Using default (%d).\n",
+                    BB_REDEF_ENV_VAR,
+                    env,
+                    BB_DEFAULT_REDEF_CAPACITY);
+        }
+    }
+
+    configured_redef_limit = BB_DEFAULT_REDEF_CAPACITY;
+    return configured_redef_limit;
+}
+
+static void bb_allocate_redefinition_storage(size_t capacity)
+{
+    if (capacity < BB_MIN_REDEF_CAPACITY)
+    {
+        capacity = BB_MIN_REDEF_CAPACITY;
+    }
+    if (capacity > BB_MAX_REDEF_CAPACITY)
+    {
+        capacity = BB_MAX_REDEF_CAPACITY;
+    }
+
+    redefined_variables =
+        (char (*)[BB_REDEF_ENTRY_LENGTH]) calloc(capacity, sizeof(*redefined_variables));
+    if (!redefined_variables)
+    {
+        fprintf(stderr,
+                "ERROR: Unable to allocate %zu redefinition slots (each %d bytes).\n",
+                capacity,
+                BB_REDEF_ENTRY_LENGTH);
+        exit(1);
+    }
+    redefined_capacity = capacity;
+}
+
+static void bb_ensure_redefinition_capacity_for_index(size_t index)
+{
+    size_t minimum_capacity = index + 1;
+
+    if (redefined_capacity == 0)
+    {
+        size_t initial = bb_get_configured_redefinition_limit();
+        if (initial < minimum_capacity)
+        {
+            initial = minimum_capacity;
+        }
+        bb_allocate_redefinition_storage(initial);
+    }
+
+    while (minimum_capacity > redefined_capacity)
+    {
+        size_t new_capacity = redefined_capacity * 2;
+        if (new_capacity < redefined_capacity || new_capacity > BB_MAX_REDEF_CAPACITY)
+        {
+            new_capacity = BB_MAX_REDEF_CAPACITY;
+        }
+        if (new_capacity < minimum_capacity)
+        {
+            fprintf(stderr,
+                    "ERROR: Maximum number of variable redefinitions (%d) exceeded.\n",
+                    BB_MAX_REDEF_CAPACITY);
+            exit(1);
+        }
+
+        {
+            char (*resized)[BB_REDEF_ENTRY_LENGTH] =
+                (char (*)[BB_REDEF_ENTRY_LENGTH]) realloc(redefined_variables,
+                                                          new_capacity * sizeof(*redefined_variables));
+            if (!resized)
+            {
+                fprintf(stderr,
+                        "ERROR: Unable to expand redefinition buffer to %zu entries.\n",
+                        new_capacity);
+                exit(1);
+            }
+
+            {
+                size_t i;
+                for (i = redefined_capacity; i < new_capacity; ++i)
+                {
+                    resized[i][0] = '\0';
+                }
+            }
+
+            redefined_variables = resized;
+        }
+
+        redefined_capacity = new_capacity;
+    }
+}
+
+static char *bb_next_redefinition_slot(void)
+{
+    bb_ensure_redefinition_capacity_for_index((size_t) numredefvars);
+    return redefined_variables[numredefvars++];
+}
 
 void currdir_foundmsg(char *foundfile)
 {
@@ -1172,7 +1316,7 @@ void newbank(int bankno)
 	len = len + 4;		//kludge
 
     if (bank == 2)
-	sprintf(redefined_variables[numredefvars++], "bscode_length = %d", len);
+	sprintf(bb_next_redefinition_slot(), "bscode_length = %d", len);
 
     if (bs == 64)
 	printf(" ORG $%1XFE0-bscode_length\n", bank - 1);
@@ -1323,21 +1467,21 @@ void set_romsize(char *size)
 {
     if (!strncmp(size, "2k\0", 2))
     {
-	strcpy(redefined_variables[numredefvars++], "ROM2k = 1");
+	strcpy(bb_next_redefinition_slot(), "ROM2k = 1");
     }
     else if (!strncmp(size, "8k\0", 2))
     {
 	bs = 8;
 	last_bank = 2;
 	if (!strncmp(size, "8kEB\0", 4))
-	    strcpy(redefined_variables[numredefvars++], "bankswitch_hotspot = $083F");
+	    strcpy(bb_next_redefinition_slot(), "bankswitch_hotspot = $083F");
 	else
-	    strcpy(redefined_variables[numredefvars++], "bankswitch_hotspot = $1FF8");
-	strcpy(redefined_variables[numredefvars++], "bankswitch = 8");
-	strcpy(redefined_variables[numredefvars++], "bs_mask = 1");
+	    strcpy(bb_next_redefinition_slot(), "bankswitch_hotspot = $1FF8");
+	strcpy(bb_next_redefinition_slot(), "bankswitch = 8");
+	strcpy(bb_next_redefinition_slot(), "bs_mask = 1");
 	if (!strncmp(size, "8kSC\0", 4))
 	{
-	    strcpy(redefined_variables[numredefvars++], "superchip = 1");
+	    strcpy(bb_next_redefinition_slot(), "superchip = 1");
 	    create_includes("superchip.inc");
 	    superchip = 1;
 	}
@@ -1348,12 +1492,12 @@ void set_romsize(char *size)
     {
 	bs = 16;
 	last_bank = 4;
-	strcpy(redefined_variables[numredefvars++], "bankswitch_hotspot = $1FF6");
-	strcpy(redefined_variables[numredefvars++], "bankswitch = 16");
-	strcpy(redefined_variables[numredefvars++], "bs_mask = 3");
+	strcpy(bb_next_redefinition_slot(), "bankswitch_hotspot = $1FF6");
+	strcpy(bb_next_redefinition_slot(), "bankswitch = 16");
+	strcpy(bb_next_redefinition_slot(), "bs_mask = 3");
 	if (!strncmp(size, "16kSC\0", 5))
 	{
-	    strcpy(redefined_variables[numredefvars++], "superchip = 1");
+	    strcpy(bb_next_redefinition_slot(), "superchip = 1");
 	    create_includes("superchip.inc");
 	    superchip = 1;
 	}
@@ -1365,14 +1509,14 @@ void set_romsize(char *size)
     {
 	bs = 32;
 	last_bank = 8;
-	strcpy(redefined_variables[numredefvars++], "bankswitch_hotspot = $1FF4");
-	strcpy(redefined_variables[numredefvars++], "bankswitch = 32");
-	strcpy(redefined_variables[numredefvars++], "bs_mask = 7");
+	strcpy(bb_next_redefinition_slot(), "bankswitch_hotspot = $1FF4");
+	strcpy(bb_next_redefinition_slot(), "bankswitch = 32");
+	strcpy(bb_next_redefinition_slot(), "bs_mask = 7");
 //    if (multisprite == 1) create_includes("multisprite_bankswitch.inc");
 	// else
 	if (!strncmp(size, "32kSC\0", 5))
 	{
-	    strcpy(redefined_variables[numredefvars++], "superchip = 1");
+	    strcpy(bb_next_redefinition_slot(), "superchip = 1");
 	    create_includes("superchip.inc");
 	    superchip = 1;
 	}
@@ -1384,12 +1528,12 @@ void set_romsize(char *size)
     {
 	bs = 64;
 	last_bank = 16;
-	strcpy(redefined_variables[numredefvars++], "bankswitch_hotspot = $1FE0");
-	strcpy(redefined_variables[numredefvars++], "bankswitch = 64");
-	strcpy(redefined_variables[numredefvars++], "bs_mask = 15");
+	strcpy(bb_next_redefinition_slot(), "bankswitch_hotspot = $1FE0");
+	strcpy(bb_next_redefinition_slot(), "bankswitch = 64");
+	strcpy(bb_next_redefinition_slot(), "bs_mask = 15");
 	if (!strncmp(size, "64kSC\0", 5))
 	{
-	    strcpy(redefined_variables[numredefvars++], "superchip = 1");
+	    strcpy(bb_next_redefinition_slot(), "superchip = 1");
 	    create_includes("superchip.inc");
 	    superchip = 1;
 	}
@@ -2008,6 +2152,17 @@ int findlabel(char **statement, int i)
     if ((statement[i + 1][0] == ':') && (!strncmp(statement[i + 2], "rem\0", 3)))
 	return 0;
 
+    if (statement[i][0] != '\0')
+    {
+	size_t token_length = strlen(statement[i]);
+	if (token_length && statement[i][token_length - 1] == ':')
+	{
+	    /* Allow `then SomeLabel: rem ...` without forcing whitespace before the colon. */
+	    if ((statement[i + 1][0] == '\0') || (!strncmp(statement[i + 1], "rem\0", 3)))
+		return 0;
+	}
+    }
+
     if (!strncmp(statement[i + 1], "else\0", 4))
 	return 0;
 //  if (!strncmp(statement[i+1],"bank\0",4)) return 0;
@@ -2172,7 +2327,7 @@ void sdata(char **statement)
     char data[200];
     int i;
     removeCR(statement[4]);
-    sprintf(redefined_variables[numredefvars++], "%s = %s", statement[2], statement[4]);
+    sprintf(bb_next_redefinition_slot(), "%s = %s", statement[2], statement[4]);
     printf("	lda #<%s_begin\n", statement[2]);
     printf("	sta %s\n", statement[4]);
     printf("	lda #>%s_begin\n", statement[2]);
@@ -2575,26 +2730,28 @@ void autodim (char **statement)
     }
 
     // register the base variable name
-    snprintf (redefined_variables[numredefvars], 100, "%s = (%s + %d)",statement[3],start_addr,current_index);
-    numredefvars++;
-
-    if ( variable_type == AD_44 )
     {
-        snprintf (redefined_variables[numredefvars], 100, "%sb44 = (%s + %d)",statement[3],start_addr,current_index);
-        numredefvars++;
-        snprintf (fixpoint44[0][numfixpoint44], 46, "%s",statement[3]);
-        snprintf (fixpoint44[1][numfixpoint44], 46, "%sb44",statement[3]);
-        numfixpoint44++;
+	char *base_entry = bb_next_redefinition_slot();
+	snprintf(base_entry, BB_REDEF_ENTRY_LENGTH, "%s = (%s + %d)", statement[3], start_addr, current_index);
     }
-    if ( variable_type == AD_88 )
+
+    if (variable_type == AD_44)
     {
-        snprintf (redefined_variables[numredefvars], 100, "%s_hi = (%s + %d)",statement[3],start_addr,current_index);
-        numredefvars++;
-        snprintf (redefined_variables[numredefvars], 100, "%s_lo = (%s + %d)",statement[3],start_addr,current_index+objcount);
-        numredefvars++;
-        snprintf (fixpoint88[0][numfixpoint88], 46, "%s",statement[3]);
-        snprintf (fixpoint88[1][numfixpoint88], 46, "%s_lo",statement[3]);
-        numfixpoint88++;
+	char *entry44 = bb_next_redefinition_slot();
+	snprintf(entry44, BB_REDEF_ENTRY_LENGTH, "%sb44 = (%s + %d)", statement[3], start_addr, current_index);
+	snprintf(fixpoint44[0][numfixpoint44], 46, "%s", statement[3]);
+	snprintf(fixpoint44[1][numfixpoint44], 46, "%sb44", statement[3]);
+	numfixpoint44++;
+    }
+    if (variable_type == AD_88)
+    {
+	char *entry_hi = bb_next_redefinition_slot();
+	char *entry_lo = bb_next_redefinition_slot();
+	snprintf(entry_hi, BB_REDEF_ENTRY_LENGTH, "%s_hi = (%s + %d)", statement[3], start_addr, current_index);
+	snprintf(entry_lo, BB_REDEF_ENTRY_LENGTH, "%s_lo = (%s + %d)", statement[3], start_addr, current_index + objcount);
+	snprintf(fixpoint88[0][numfixpoint88], 46, "%s", statement[3]);
+	snprintf(fixpoint88[1][numfixpoint88], 46, "%s_lo", statement[3]);
+	numfixpoint88++;
     }
 
     // advance the autodim index past this recent allocation...
@@ -2634,26 +2791,30 @@ void dim(char **statement)
 	statement[4][i] = '\0';	// terminate string at '.'
     }
     i = 2;
-    redefined_variables[numredefvars][0] = '\0';
-    while ((statement[i][0] != '\0') && (statement[i][0] != ':'))
     {
-	strcat(redefined_variables[numredefvars], statement[i++]);
-	strcat(redefined_variables[numredefvars], " ");
+	char *dim_entry = bb_next_redefinition_slot();
+	dim_entry[0] = '\0';
+	while ((statement[i][0] != '\0') && (statement[i][0] != ':'))
+	{
+	    strcat(dim_entry, statement[i++]);
+	    strcat(dim_entry, " ");
+	}
     }
-    numredefvars++;
 }
 
 void doconst(char **statement)
 {
     // basically the same as dim, except we keep a queue of variable names that are constant
     int i = 2;
-    redefined_variables[numredefvars][0] = '\0';
-    while ((statement[i][0] != '\0') && (statement[i][0] != ':'))
     {
-	strcat(redefined_variables[numredefvars], statement[i++]);
-	strcat(redefined_variables[numredefvars], " ");
+	char *const_entry = bb_next_redefinition_slot();
+	const_entry[0] = '\0';
+	while ((statement[i][0] != '\0') && (statement[i][0] != ':'))
+	{
+	    strcat(const_entry, statement[i++]);
+	    strcat(const_entry, " ");
+	}
     }
-    numredefvars++;
     strcpy(constants[numconstants++], statement[2]);	// record to queue
 }
 
@@ -5631,14 +5792,14 @@ void set(char **statement)
 	if (!strncasecmp(statement[3], "ntsc\0", 4))
 	{
 	    // pick constant timer values for now, later maybe add more lines
-	    strcpy(redefined_variables[numredefvars++], "overscan_time = 37");
-	    strcpy(redefined_variables[numredefvars++], "vblank_time = 43");
+	    strcpy(bb_next_redefinition_slot(), "overscan_time = 37");
+	    strcpy(bb_next_redefinition_slot(), "vblank_time = 43");
 	}
 	else if (!strncasecmp(statement[3], "pal\0", 3))
 	{
 	    // 36 and 48 scanlines, respectively
-	    strcpy(redefined_variables[numredefvars++], "overscan_time = 82");
-	    strcpy(redefined_variables[numredefvars++], "vblank_time = 58");
+	    strcpy(bb_next_redefinition_slot(), "overscan_time = 82");
+	    strcpy(bb_next_redefinition_slot(), "vblank_time = 58");
 	}
 	else
 	    prerror("set TV: invalid TV type\n");
@@ -5658,7 +5819,7 @@ void set(char **statement)
 	    prerror("set dpcspritemax: invalid value\n");
 	    exit(1);
 	}
-	sprintf(redefined_variables[numredefvars++], "dpcspritemax = %d", v);
+	sprintf(bb_next_redefinition_slot(), "dpcspritemax = %d", v);
     }
     else if (!strncmp(statement[2], "romsize\0", 7))
     {
@@ -5701,7 +5862,7 @@ void set(char **statement)
 	{
 	    if (!strncmp(statement[i], "readpaddle\0", 10))
 	    {
-		strcpy(redefined_variables[numredefvars++], "readpaddle = 1");
+		strcpy(bb_next_redefinition_slot(), "readpaddle = 1");
 		if (bs == 28)
 		{
 		    printf("DPC_kernel_options = INPT0+$40\n");
@@ -5724,18 +5885,18 @@ void set(char **statement)
 	    }
 	    else if (!strncmp(statement[i], "player1colors\0", 13))
 	    {
-		strcpy(redefined_variables[numredefvars++], "player1colors = 1");
+		strcpy(bb_next_redefinition_slot(), "player1colors = 1");
 		kernel_options |= 2;
 	    }
 	    else if (!strncmp(statement[i], "playercolors\0", 12))
 	    {
-		strcpy(redefined_variables[numredefvars++], "playercolors = 1");
-		strcpy(redefined_variables[numredefvars++], "player1colors = 1");
+		strcpy(bb_next_redefinition_slot(), "playercolors = 1");
+		strcpy(bb_next_redefinition_slot(), "player1colors = 1");
 		kernel_options |= 6;
 	    }
 	    else if (!strncmp(statement[i], "no_blank_lines\0", 13))
 	    {
-		strcpy(redefined_variables[numredefvars++], "no_blank_lines = 1");
+		strcpy(bb_next_redefinition_slot(), "no_blank_lines = 1");
 		kernel_options |= 8;
 	    }
 	    else if (!strncasecmp(statement[i], "pfcolors\0", 8))
@@ -5748,7 +5909,7 @@ void set(char **statement)
 	    }
 	    else if (!strncasecmp(statement[i], "backgroundchange\0", 10))
 	    {
-		strcpy(redefined_variables[numredefvars++], "backgroundchange = 1");
+		strcpy(bb_next_redefinition_slot(), "backgroundchange = 1");
 		kernel_options |= 64;
 	    }
 	    else
@@ -5759,11 +5920,11 @@ void set(char **statement)
 	    i++;
 	}
 	if ((kernel_options & 48) == 32)
-	    strcpy(redefined_variables[numredefvars++], "PFheights = 1");
+	    strcpy(bb_next_redefinition_slot(), "PFheights = 1");
 	else if ((kernel_options & 48) == 16)
-	    strcpy(redefined_variables[numredefvars++], "PFcolors = 1");
+	    strcpy(bb_next_redefinition_slot(), "PFcolors = 1");
 	else if ((kernel_options & 48) == 48)
-	    strcpy(redefined_variables[numredefvars++], "PFcolorandheight = 1");
+	    strcpy(bb_next_redefinition_slot(), "PFcolorandheight = 1");
 //fprintf(stderr,"%d\n",kernel_options);
 	// check for valid combinations
 	if (kernel_options == 1)
@@ -5788,37 +5949,37 @@ void set(char **statement)
 	if (!strncmp(statement[3], "multisprite\0", 11))
 	{
 	    multisprite = 1;
-	    strcpy(redefined_variables[numredefvars++], "multisprite = 1");
+	    strcpy(bb_next_redefinition_slot(), "multisprite = 1");
 	    create_includes("multisprite.inc");
 	    ROMpf = 1;
 	}
 	else if (!strncmp(statement[3], "DPC\0", 3))
 	{
 		multisprite = 2;
-		strcpy(redefined_variables[numredefvars++], "multisprite = 2");
+		strcpy(bb_next_redefinition_slot(), "multisprite = 2");
     	create_includes("DPCplus.inc");
 	    bs = 28;
 	    last_bank = 7;
-	    strcpy(redefined_variables[numredefvars++], "bankswitch_hotspot = $1FF6");
-	    strcpy(redefined_variables[numredefvars++], "bankswitch = 28");
-	    strcpy(redefined_variables[numredefvars++], "bs_mask = 7");
+	    strcpy(bb_next_redefinition_slot(), "bankswitch_hotspot = $1FF6");
+	    strcpy(bb_next_redefinition_slot(), "bankswitch = 28");
+	    strcpy(bb_next_redefinition_slot(), "bs_mask = 7");
 	}
 	else if (!strncmp(statement[3], "PXE\0", 3))
 	{
 		multisprite = 2;
-		strcpy(redefined_variables[numredefvars++], "multisprite = 2");
+		strcpy(bb_next_redefinition_slot(), "multisprite = 2");
 		isPXE = 1;
-		strcpy(redefined_variables[numredefvars++], "PXE = 1");
+		strcpy(bb_next_redefinition_slot(), "PXE = 1");
 		create_includes("PXE.inc");
 	    bs = 28;
-		strcpy(redefined_variables[numredefvars++], "bankswitch_hotspot = $1FF6");
-	    strcpy(redefined_variables[numredefvars++], "bankswitch = 28");
-		strcpy(redefined_variables[numredefvars++], "bs_mask = 7");
+		strcpy(bb_next_redefinition_slot(), "bankswitch_hotspot = $1FF6");
+	    strcpy(bb_next_redefinition_slot(), "bankswitch = 28");
+		strcpy(bb_next_redefinition_slot(), "bs_mask = 7");
 	}
 	else if (!strncmp(statement[3], "multisprite_no_include\0", 11))
 	{
 	    multisprite = 1;
-	    strcpy(redefined_variables[numredefvars++], "multisprite = 1");
+	    strcpy(bb_next_redefinition_slot(), "multisprite = 1");
 	    ROMpf = 1;
 	}
 	else
@@ -5828,18 +5989,18 @@ void set(char **statement)
     {
 	if (!strncmp(statement[3], "cyclescore\0", 10))
 	{
-	    strcpy(redefined_variables[numredefvars++], "debugscore = 1");
+	    strcpy(bb_next_redefinition_slot(), "debugscore = 1");
 	}
 	else if (!strncmp(statement[3], "cycles\0", 6))
 	{
-	    strcpy(redefined_variables[numredefvars++], "debugcycles = 1");
+	    strcpy(bb_next_redefinition_slot(), "debugcycles = 1");
 	}
 	else
 	    prerror("set debug: debugging mode unknown\n");
     }
     else if (!strncmp(statement[2], "legacy\0", 6))
     {
-	sprintf(redefined_variables[numredefvars++], "legacy = %d", (int) (100 * (atof(statement[3]))));
+	sprintf(bb_next_redefinition_slot(), "legacy = %d", (int) (100 * (atof(statement[3]))));
     }
     else
 	prerror("set: unknown parameter\n");
@@ -6155,10 +6316,10 @@ void header_write(FILE * header, char *filename)
 	exit(1);
     }
 
-    strcpy(redefined_variables[numredefvars],
-	   "; This file contains variable mapping and other information for the current project.\n");
+    fprintf(header,
+	    "; This file contains variable mapping and other information for the current project.\n\n");
 
-    for (i = numredefvars; i >= 0; i--)
+    for (i = numredefvars - 1; i >= 0; i--)
     {
 	fprintf(header, "%s\n", redefined_variables[i]);
     }

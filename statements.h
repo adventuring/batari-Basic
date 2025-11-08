@@ -10,6 +10,15 @@
 #define MAX_EXTRAS 5
 
 #include <stdio.h>
+#include <stddef.h>
+
+#define BB_REDEF_ENTRY_LENGTH 100
+#define BB_REDEF_ENV_VAR "BB_MAX_REDEFS"
+#define BB_DEFAULT_REDEF_CAPACITY 2048
+#define BB_MIN_REDEF_CAPACITY 128
+#define BB_MAX_REDEF_CAPACITY 65536
+
+size_t bb_get_configured_redefinition_limit(void);
 
 void doextra(char *);
 void callmacro(char **);
