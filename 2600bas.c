@@ -186,10 +186,12 @@ int main(int argc, char *argv[])
 	{
 	    single = code[i++];
 	    if (single == ',')
+	    {
 		// Treat commas exactly like spaces so constructs such as
 		// "on x goto label0, label1" parse identically to the
 		// space-separated form without extra syntax handling.
 		single = ' ';
+	    }
 	    if (single == ' ')
 	    {
 		if (!multiplespace)
