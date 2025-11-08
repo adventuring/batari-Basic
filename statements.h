@@ -96,6 +96,7 @@ void prerror (char *, ...);
 void prwarn (char *, ...);
 void prinfo (char *, ...);
 void remove_trailing_commas(char *);
+void remove_leading_spaces(char *);
 void removeCR(char *);
 void bmi(char *);
 void bpl(char *);

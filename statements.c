@@ -2313,6 +2313,18 @@ void ongoto(char **statement)
 	for (k = 0; k < 200; ++k)
 	    if ((statement[i][k] == (unsigned char) 0x0A) || (statement[i][k] == (unsigned char) 0x0D))
 		statement[i][k] = '\0';
+	remove_trailing_commas(statement[i]);
+	remove_leading_spaces(statement[i]);
+	if ((statement[i][0] == ',') && (statement[i][1] == '\0'))
+	{
+	    i++;
+	    continue;
+	}
+	if (statement[i][0] == '\0')
+	{
+	    i++;
+	    continue;
+	}
 	printf("	.byte >(.%s-1)\n", statement[i++]);
     }
     printf(".%sjumptablelo\n", statement[0]);
@@ -2322,6 +2334,18 @@ void ongoto(char **statement)
 	for (k = 0; k < 200; ++k)
 	    if ((statement[i][k] == (unsigned char) 0x0A) || (statement[i][k] == (unsigned char) 0x0D))
 		statement[i][k] = '\0';
+	remove_trailing_commas(statement[i]);
+	remove_leading_spaces(statement[i]);
+	if ((statement[i][0] == ',') && (statement[i][1] == '\0'))
+	{
+	    i++;
+	    continue;
+	}
+	if (statement[i][0] == '\0')
+	{
+	    i++;
+	    continue;
+	}
 	printf("	.byte <(.%s-1)\n", statement[i++]);
     }
     if (!strncmp(statement[3], "gosub\0", 5))
@@ -6083,18 +6107,39 @@ void removeCR(char *linenumber)	// remove trailing CR from string
 void remove_trailing_commas(char *linenumber)	// remove trailing commas from string
 {
     int i;
-    for (i = strlen(linenumber) - 1; i > 0; i--)
+    int length = strlen(linenumber);
+
+    for (i = length - 1; i >= 0; --i)
     {
-	if ((linenumber[i] != ',') &&
-	    (linenumber[i] != ' ') &&
-	    (linenumber[i] != (unsigned char) 0x0A) && (linenumber[i] != (unsigned char) 0x0D))
-	    break;
-	if (linenumber[i] == ',')
+	unsigned char ch = (unsigned char) linenumber[i];
+	if ((ch == ' ') || (ch == '\t') || (ch == '\n') || (ch == '\r'))
 	{
-	    linenumber[i] = ' ';
-	    break;
+	    linenumber[i] = '\0';
+	    continue;
 	}
+	if (ch == ',')
+	{
+	    linenumber[i] = '\0';
+	    while ((i > 0) &&
+		   ((linenumber[i - 1] == ' ') || (linenumber[i - 1] == '\t') ||
+		    (linenumber[i - 1] == '\n') || (linenumber[i - 1] == '\r')))
+	    {
+		linenumber[--i] = '\0';
+	    }
+	}
+	break;
     }
+}
+
+void remove_leading_spaces(char *linenumber)
+{
+    int offset = 0;
+
+    while ((linenumber[offset] == ' ') || (linenumber[offset] == '\t'))
+	offset++;
+
+    if (offset)
+	memmove(linenumber, linenumber + offset, strlen(linenumber + offset) + 1);
 }
 
 void header_open(FILE * header)

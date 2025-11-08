@@ -8,6 +8,7 @@
 #include "keywords.h"
 #include <math.h>
 #define BB_VERSION_INFO "batari Basic v1.9 (c)2025\n"
+#define BB_MAX_LINE 2048
 
 extern int bank;
 
@@ -25,8 +26,8 @@ int main(int argc, char *argv[])
     int defcount = 0;
     char *c;
     char single;
-    char code[500];
-    char displaycode[500];
+    char code[BB_MAX_LINE];
+    char displaycode[BB_MAX_LINE];
     FILE *header = NULL;
     int multiplespace = 0;
     char *includes_file = "default.inc";
@@ -34,9 +35,9 @@ int main(int argc, char *argv[])
     char *path = 0;
     char def[500][100];
     char defr[500][100];
-    char finalcode[500];
+    char finalcode[BB_MAX_LINE];
     char *codeadd;
-    char mycode[500];
+    char mycode[BB_MAX_LINE];
     int defi = 0;
     // get command line arguments
     while ((i = getopt(argc, argv, "i:r:v")) != -1)
@@ -44,7 +45,7 @@ int main(int argc, char *argv[])
 	switch (i)
 	{
 	case 'i':
-	    path = (char *) malloc(500);
+	    path = (char *) malloc(BB_MAX_LINE);
 	    path = optarg;
 	    break;
 	case 'r':
@@ -84,18 +85,18 @@ int main(int argc, char *argv[])
 		statement[i][j] = '\0';
 	    }
 	}
-	c = fgets(code, 500, stdin);	// get next line from input
+	c = fgets(code, BB_MAX_LINE, stdin);	// get next line from input
 	incline();
 	strcpy(displaycode, code);
 
 	// look for defines and remember them
 	strcpy(mycode, code);
         int k_def_search; // Use a different loop variable to avoid conflict with outer 'i'
-        for (k_def_search = 0; k_def_search < 495; ++k_def_search)
+        for (k_def_search = 0; k_def_search < BB_MAX_LINE - 5; ++k_def_search)
 	    if (code[k_def_search] == ' ')
 		break;
-        if (k_def_search < 495 && code[k_def_search] == ' ' && /* Ensure space was found */
-            (k_def_search + 4 < 499) && /* Bounds check for code access */
+        if (k_def_search < BB_MAX_LINE - 5 && code[k_def_search] == ' ' && /* Ensure space was found */
+            (k_def_search + 4 < BB_MAX_LINE - 1) && /* Bounds check for code access */
         code[k_def_search + 1] == 'd' && code[k_def_search + 2] == 'e' && 
         code[k_def_search + 3] == 'f' && code[k_def_search + 4] == ' ')
 	{			// found a define
@@ -106,7 +107,7 @@ int main(int argc, char *argv[])
 	        exit(1);
 	    }
 
-	    for (j = 0; current_pos < 499 && code[current_pos] != ' ' && code[current_pos] != '\0' && code[current_pos] != '\n' && code[current_pos] != '\r'; current_pos++)
+	    for (j = 0; current_pos < BB_MAX_LINE - 1 && code[current_pos] != ' ' && code[current_pos] != '\0' && code[current_pos] != '\n' && code[current_pos] != '\r'; current_pos++)
 	    {
 	        if (j >= 99) {
 	            fprintf(stderr, "(%d) ERROR: Define name too long (max 99 chars).\n", bbgetline());
@@ -122,13 +123,13 @@ int main(int argc, char *argv[])
 	    }
 
 	    // Expect " = " sequence after define name
-	    if (!(current_pos < 497 && code[current_pos] == ' ' && code[current_pos+1] == '=' && code[current_pos+2] == ' ')) {
+	    if (!(current_pos <= BB_MAX_LINE - 3 && code[current_pos] == ' ' && code[current_pos+1] == '=' && code[current_pos+2] == ' ')) {
 	        fprintf(stderr, "(%d) ERROR: Malformed define statement. Expected \" = \" after define name '%s'.\n", bbgetline(), def[defi]);
 		exit(1);
 	    }
 	    current_pos += 3; // Skip " = "
 
-	    for (j = 0; current_pos < 499 && code[current_pos] != '\0' && code[current_pos] != '\n' && code[current_pos] != '\r'; current_pos++)
+	    for (j = 0; current_pos < BB_MAX_LINE - 1 && code[current_pos] != '\0' && code[current_pos] != '\n' && code[current_pos] != '\r'; current_pos++)
 	    {
 	        if (j >= 99) {
 	            fprintf(stderr, "(%d) ERROR: Define replacement string too long (max 99 chars) for define '%s'.\n", bbgetline(), def[defi]);
@@ -151,7 +152,7 @@ int main(int argc, char *argv[])
 		defcount = 0;
 		while (1)
 		{
-		    if (defcount++ > 500)
+		    if (defcount++ > BB_MAX_LINE)
 		    {
 			fprintf(stderr, "(%d) Infinitely repeating definition or too many instances of a definition\n",
 				bbgetline());
@@ -160,7 +161,7 @@ int main(int argc, char *argv[])
 		    codeadd = strstr (mycode, def[def_idx]);
 		    if (codeadd == NULL)
 			break;
-		    for (j = 0; j < 500; ++j)
+		    for (j = 0; j < BB_MAX_LINE; ++j)
 			finalcode[j] = '\0';
 		    strncpy(finalcode, mycode, strlen(mycode) - strlen(codeadd));
 		    strcat (finalcode, defr[def_idx]);
@@ -184,6 +185,11 @@ int main(int argc, char *argv[])
 	while (code[i] != '\0')
 	{
 	    single = code[i++];
+	    if (single == ',')
+		// Treat commas exactly like spaces so constructs such as
+		// "on x goto label0, label1" parse identically to the
+		// space-separated form without extra syntax handling.
+		single = ' ';
 	    if (single == ' ')
 	    {
 		if (!multiplespace)
