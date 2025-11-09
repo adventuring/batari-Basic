@@ -5827,25 +5827,51 @@ void set(char **statement)
     }
     else if (!strncmp(statement[2], "optimization\0", 5))
     {
-	if (!strncmp(statement[3], "speed\0", 5))
+	int opt_index = 3;
+	while (statement[opt_index][0] != '\0')
 	{
-	    optimization |= 1;
-	}
-	if (!strncmp(statement[3], "size\0", 4))
-	{
-	    optimization |= 2;
-	}
-	if (!strncmp(statement[3], "noinlinedata\0", 4))
-	{
-	    optimization |= 4;
-	}
-	if (!strncmp(statement[3], "inlinerand\0", 4))
-	{
-	    optimization |= 8;
-	}
-	if (!strncmp(statement[3], "none\0", 4))
-	{
-	    optimization = 0;
+	    char option[200];
+
+	    if (!strncasecmp(statement[opt_index], "rem\0", 3))
+		break;
+
+	    strncpy(option, statement[opt_index], sizeof(option));
+	    option[sizeof(option) - 1] = '\0';
+	    remove_trailing_commas(option);
+
+	    if (!option[0])
+	    {
+		opt_index++;
+		continue;
+	    }
+
+	    if (!strncasecmp(option, "speed\0", 5))
+	    {
+		optimization |= 1;
+	    }
+	    else if (!strncasecmp(option, "size\0", 4))
+	    {
+		optimization |= 2;
+	    }
+	    else if (!strncasecmp(option, "noinlinedata\0", 4))
+	    {
+		optimization |= 4;
+	    }
+	    else if (!strncasecmp(option, "inlinerand\0", 4))
+	    {
+		optimization |= 8;
+	    }
+	    else if (!strncasecmp(option, "none\0", 4))
+	    {
+		optimization = 0;
+	    }
+	    else
+	    {
+		prerror("set optimization: Options unknown or invalid\n");
+		exit(1);
+	    }
+
+	    opt_index++;
 	}
     }
     else if (!strncmp(statement[2], "kernal\0", 6))
