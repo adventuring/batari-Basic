@@ -5681,9 +5681,9 @@ void dogoto(char **statement)
 // we need to switch banks
     printf(" sta temp7\n");
 // next we must push the place to jmp to
-    printf(" lda #>(.%s-1)\n", statement[2]);
+    printf(" lda #>(%s-1)\n", statement[2]);
     printf(" pha\n");
-    printf(" lda #<(.%s-1)\n", statement[2]);
+    printf(" lda #<(%s-1)\n", statement[2]);
     printf(" pha\n");
 // now store regs on stack
     printf(" lda temp7\n");
@@ -5732,10 +5732,10 @@ void gosub(char **statement)
     printf(" pha\n");
 
 // next we must push the place to jsr to
-    printf(" lda #>(.%s-1)\n", statement[2]);
+    printf(" lda #>(%s-1)\n", statement[2]);
     printf(" pha\n");
 
-    printf(" lda #<(.%s-1)\n", statement[2]);
+    printf(" lda #<(%s-1)\n", statement[2]);
     printf(" pha\n");
 
 // now store regs on stack
