@@ -4833,6 +4833,22 @@ void dolet(char **cstatement)
 
     strcpy(Aregcopy, "index-invalid");
 
+    /* Optional tracing: enable with BB_TRACE_DOLET=1; writes to stderr only */
+    {
+        const char *bb_trace = getenv("BB_TRACE_DOLET");
+        if (bb_trace && bb_trace[0] && bb_trace[0] != '0') {
+            /* Print current source line and first few tokens safely */
+            const char *t0 = (cstatement && cstatement[0]) ? cstatement[0] : "";
+            const char *t1 = (cstatement && cstatement[1]) ? cstatement[1] : "";
+            const char *t2 = (cstatement && cstatement[2]) ? cstatement[2] : "";
+            const char *t3 = (cstatement && cstatement[3]) ? cstatement[3] : "";
+            const char *t4 = (cstatement && cstatement[4]) ? cstatement[4] : "";
+            const char *t5 = (cstatement && cstatement[5]) ? cstatement[5] : "";
+            fprintf(stderr, "[bB dolet] line %d: %s %s %s %s %s %s\n",
+                    line, t0, t1, t2, t3, t4, t5);
+        }
+    }
+
     statement = (char **) malloc(sizeof(char *) * 200);
     deallocstatement = statement;
     if (!strncmp(cstatement[2], "=\0", 1))
