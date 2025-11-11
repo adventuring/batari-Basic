@@ -86,6 +86,15 @@ int main(int argc, char *argv[])
 		readbBfile[bB][writebBfile[bB]] = (char *) malloc(strlen(line) + 3);
 		sprintf(readbBfile[bB][writebBfile[bB]], ";%s\n", line);
 	    }
+	    char *trimmed = asmline;
+	    while (*trimmed == ' ' || *trimmed == '\t')
+		trimmed++;
+	    if (!strncmp(trimmed, "asm", 3) &&
+		(trimmed[3] == '\0' || trimmed[3] == '\n' || trimmed[3] == '\r'))
+		continue;
+	    if (!strncmp(trimmed, "end", 3) &&
+		(trimmed[3] == '\0' || trimmed[3] == '\n' || trimmed[3] == '\r'))
+		continue;
 	    if (!writebBfile[bB])
 		printf("%s", asmline);
 	    else
