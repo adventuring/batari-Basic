@@ -197,7 +197,7 @@ stack4 = $f9
 
  ifconst superchip
 playfieldbase = $10D0
- include superchip.h
+ include "superchip.h"
  else
 playfieldbase = $A4
  endif
