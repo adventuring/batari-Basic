@@ -1319,17 +1319,19 @@ void newbank(int bankno)
 	sprintf(bb_next_redefinition_slot(), "bscode_length = %d", len);
 
     if (bs == 64)
-	printf(" ORG $%1XFE0-bscode_length\n", bank - 1);
+    {
+	unsigned int bank_phys_base = (unsigned int)(bank - 1) << 12;
+	printf(" ORG $%04X-bscode_length\n", bank_phys_base + 0x0FE0);
+	printf(" RORG $%04X-bscode_length\n", (0xF000 + 0x0FE0) & 0xFFFF);
+    }
     else
+    {
 	printf(" ORG $%dFF4-bscode_length\n", bank - 1);
-
-
-    if (bs == 28)
-	printf(" RORG $%XF4-bscode_length\n", (2 * (bank - 1) - 1) * 16 + 15);
-    else if (bs == 64)
-	printf(" RORG $%XE0-bscode_length\n", (31 - bs / 2 + 2 * (bank - 1)) * 16 + 15);
-    else
-	printf(" RORG $%XF4-bscode_length\n", (15 - bs / 2 + 2 * (bank - 1)) * 16 + 15);
+	if (bs == 28)
+	    printf(" RORG $%XF4-bscode_length\n", (2 * (bank - 1) - 1) * 16 + 15);
+	else
+	    printf(" RORG $%XF4-bscode_length\n", (15 - bs / 2 + 2 * (bank - 1)) * 16 + 15);
+    }
 
 
     printf("start_bank%d", bank - 1);
@@ -1343,47 +1345,60 @@ void newbank(int bankno)
 
     fclose(bs_support);
 
-    printf(" ORG $%1XFFC\n", bank - 1);
-
-    if (bs == 28)
-	printf(" RORG $%XFC\n", (2 * (bank - 1) - 1) * 16 + 15);
-    else if (bs == 64)
-	printf(" RORG $%XFC\n", (31 - bs / 2 + 2 * (bank - 1)) * 16 + 15);
+    if (bs == 64)
+    {
+	unsigned int bank_phys_base = (unsigned int)(bank - 1) << 12;
+	printf(" ORG $%04X\n", bank_phys_base + 0x0FFC);
+	printf(" RORG $%04X\n", (0xF000 + 0x0FFC) & 0xFFFF);
+    }
     else
-	printf(" RORG $%XFC\n", (15 - bs / 2 + 2 * (bank - 1)) * 16 + 15);
+    {
+	printf(" ORG $%1XFFC\n", bank - 1);
+	if (bs == 28)
+	    printf(" RORG $%XFC\n", (2 * (bank - 1) - 1) * 16 + 15);
+	else
+	    printf(" RORG $%XFC\n", (15 - bs / 2 + 2 * (bank - 1)) * 16 + 15);
+    }
 
     printf(" .word (start_bank%d & $ffff)\n", bank - 1);
     printf(" .word (start_bank%d & $ffff)\n", bank - 1);
 
     // now end
-    printf(" ORG $%1X000\n", bank);
-    if (bs == 28)
+    if (bs == 64)
     {
-	printf(" RORG $%X00\n", (2 * bank - 1) * 16);
-	switch (bank)
-	{
-	case 2:		// probably a better way to do this!!!
-	    printf("HMdiv\n");
-	    printf("  .byte 0, 0, 0, 0, 0, 0, 0\n");
-	    printf("  .byte 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2\n");
-	    printf("  .byte 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 3\n");
-	    printf("  .byte 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 4\n");
-	    printf("  .byte 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 5, 5, 5, 5\n");
-	    printf("  .byte 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 6, 6, 6, 6, 6\n");
-	    printf("  .byte 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 7, 7, 7, 7, 7, 7\n");
-	    printf("  .byte 7, 7, 7, 7, 7, 7, 7, 7, 7, 8, 8, 8, 8, 8, 8, 8\n");
-	    printf("  .byte 8, 8, 8, 8, 8, 8, 8, 8, 9, 9, 9, 9, 9, 9, 9, 9\n");
-	    printf("  .byte 9, 9, 9, 9, 9, 9, 9, 10, 10, 10, 10, 10, 10, 10, 10, 10\n");
-	    printf("  .byte 10,10,10,10,10,10,0,0,0\n");
-	    break;
-	default:
-	    printf(" repeat 129\n .byte 0\n repend\n");
-	}
+	unsigned int bank_phys_base = (unsigned int)(bank - 1) << 12;
+	printf(" ORG $%04X\n", bank_phys_base);
+	printf(" RORG $%04X\n", 0xF000);
     }
-    else if (bs == 64)
-	printf(" RORG $%X00\n", (31 - bs / 2 + 2 * bank) * 16);
     else
-	printf(" RORG $%X00\n", (15 - bs / 2 + 2 * bank) * 16);
+    {
+	printf(" ORG $%1X000\n", bank);
+	if (bs == 28)
+	{
+	    printf(" RORG $%X00\n", (2 * bank - 1) * 16);
+	    switch (bank)
+	    {
+	    case 2:		// probably a better way to do this!!!
+		printf("HMdiv\n");
+		printf("  .byte 0, 0, 0, 0, 0, 0, 0\n");
+		printf("  .byte 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2\n");
+		printf("  .byte 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 3\n");
+		printf("  .byte 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 4\n");
+		printf("  .byte 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 5, 5, 5, 5\n");
+		printf("  .byte 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 6, 6, 6, 6, 6\n");
+		printf("  .byte 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 7, 7, 7, 7, 7, 7\n");
+		printf("  .byte 7, 7, 7, 7, 7, 7, 7, 7, 7, 8, 8, 8, 8, 8, 8, 8\n");
+		printf("  .byte 8, 8, 8, 8, 8, 8, 8, 8, 9, 9, 9, 9, 9, 9, 9, 9\n");
+		printf("  .byte 9, 9, 9, 9, 9, 9, 9, 10, 10, 10, 10, 10, 10, 10, 10, 10\n");
+		printf("  .byte 10,10,10,10,10,10,0,0,0\n");
+		break;
+	    default:
+		printf(" repeat 129\n .byte 0\n repend\n");
+	    }
+	}
+	else
+	    printf(" RORG $%X00\n", (15 - bs / 2 + 2 * bank) * 16);
+    }
     if (superchip)
 	printf(" repeat 256\n .byte $ff\n repend\n");
 
