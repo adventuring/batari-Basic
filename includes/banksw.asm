@@ -8,6 +8,13 @@
 ; line below tells the compiler how long this is - do not remove
 ;size=32
 
+ ifconst bankswitch
+   if bankswitch == 64
+     ORG $FFE0-bscode_length
+     RORG $FFE0-bscode_length
+   endif
+ endif
+
 begin_bscode
  ldx #$ff
  ifconst FASTFETCH ; using DPC+
