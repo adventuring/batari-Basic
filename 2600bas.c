@@ -403,7 +403,7 @@ int main(int argc, char *argv[])
         else
             printf("       echo \"    \",[(DPC_graphics_end - *)]d , \"bytes of ROM space left");
     } else
-	printf("       echo \"    \",[(($10FC0 - *))]d , \"bytes of ROM space left");
+	printf("       echo \"    \",[(($10FC0 - ((* & $0FFF) | $10000))]d , \"bytes of ROM space left");
     if (bs == 8)
 	printf(" in bank 2");
     if (bs == 16)
@@ -415,7 +415,7 @@ int main(int argc, char *argv[])
     if (bs == 64) {
 	printf(" in bank 16");
 	printf("\")\n");
-	printf(" if (* > ($10FC0))\n");
+	printf(" if (((* & $0FFF) | $10000) > $10FC0)\n");
 	printf(" echo \"ERROR: Bank 16 overflow detected!\"\n");
 	printf(" err\n");
 	printf(" endif\n");

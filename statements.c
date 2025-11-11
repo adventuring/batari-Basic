@@ -1288,8 +1288,8 @@ void newbank(int bankno)
 	prerror("bank not supported\n");
 
     printf(" if ECHO%d\n", bank - 1);
-    printf(" echo \"    \",[(($%X - *))]d , \"bytes of ROM space left in bank %d\")\n", (bank * 0x1000) + 0xFC0, bank);
-    printf(" if (* > ($%X))\n", (bank * 0x1000) + 0xFC0);
+    printf(" echo \"    \",[(($%X - ((* & $0FFF) | ($%X))))]d , \"bytes of ROM space left in bank %d\")\n", (bank * 0x1000) + 0xFC0, bank * 0x1000, bank);
+    printf(" if (((* & $0FFF) | ($%X)) > ($%X))\n", bank * 0x1000, (bank * 0x1000) + 0xFC0);
     printf(" echo \"ERROR: Bank %d overflow detected!\"\n", bank);
     printf(" err\n");
     printf(" endif\n");
@@ -1370,7 +1370,7 @@ void newbank(int bankno)
     // now end
     if (bs == 64)
     {
-	unsigned int bank_phys_base = (unsigned int)(bank - 1) << 12;
+	unsigned int bank_phys_base = (unsigned int)bank << 12;
 	printf(" ORG $%04X\n", bank_phys_base);
 	printf(" RORG $%04X\n", 0xF000);
     }
