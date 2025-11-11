@@ -1288,7 +1288,11 @@ void newbank(int bankno)
 	prerror("bank not supported\n");
 
     printf(" if ECHO%d\n", bank - 1);
-    printf(" echo \"    \",[(start_bank%d - *)]d , \"bytes of ROM space left in bank %d\")\n", bank - 1, bank - 1);
+    printf(" echo \"    \",[(($%X - *))]d , \"bytes of ROM space left in bank %d\")\n", (bank * 0x1000) + 0xFC0, bank);
+    printf(" if (* > ($%X))\n", (bank * 0x1000) + 0xFC0);
+    printf(" echo \"ERROR: Bank %d overflow detected!\"\n", bank);
+    printf(" err\n");
+    printf(" endif\n");
     printf(" endif\n");
     printf("ECHO%d = 1\n", bank - 1);
 

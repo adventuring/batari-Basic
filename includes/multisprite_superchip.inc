@@ -6,6 +6,9 @@
 ;
 multispritesuperchipheader.asm
 
+; Include the ChaosFight combined header with bank boundary constants
+../../Source/Common/MultiSpriteSuperChip.s
+
 ; this is the batari Basic file
 ; for bankswitching, the concatenator will only parse until the end of 
 ; bank 1
