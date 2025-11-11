@@ -4,7 +4,6 @@
 ; Includes go below - order is crucial, since this is also the order in which
 ; they will appear in the generated assembly file
 ;
-; header file
 multispritesuperchipheader.asm
 
 ; this is the batari Basic file

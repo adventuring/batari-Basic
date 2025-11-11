@@ -3,8 +3,6 @@
  processor 6502
  include "vcs.h"
  include "macro.h"
- ; NOTE: Do not include 2600basic.h here; multisprite.h provides its own TIA alias map.
- ; Including both headers causes DASM EQU redefinition failures.
  include "multisprite.h"
  include "superchip.h"
  include "2600basic_variable_redefs.h"
