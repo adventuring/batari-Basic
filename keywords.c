@@ -10,6 +10,7 @@
 extern int ors;
 extern int numelses;
 extern int numthens;
+extern int includesfile_user_override;
 
 int swaptest(char *value)	// check for then, && or ||
 {
@@ -298,7 +299,10 @@ void keywords(char **cstatement)
 	else if (!strncmp(statement[0], "end", 4))
 	    endfunction();
 	else if (!strncmp(statement[1], "includesfile", 13))
+	{
+	    includesfile_user_override = 1;
 	    create_includes(statement[2]);
+	}
 	else if (!strncmp(statement[1], "include", 7))
 	    add_includes(statement[2]);
 	else if (!strncmp(statement[1], "inline", 7))

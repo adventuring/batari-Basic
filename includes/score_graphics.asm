@@ -28,9 +28,9 @@ hex = 8
        ORG $8F94-bscode_length
        RORG $FF94-bscode_length
      endif
-     if bankswitch == 64
-       ORG  $10F80-bscode_length
-       RORG $1FF80-bscode_length
+    if bankswitch == 64
+      ORG  $FF80-bscode_length
+      RORG $FF80-bscode_length
      endif
    else
      ORG $FF9C
@@ -196,9 +196,9 @@ scoretable
        ORG $8FF4-bscode_length
        RORG $FFF4-bscode_length
      endif
-     if bankswitch == 64
-       ORG  $10FE0-bscode_length
-       RORG $1FFE0-bscode_length
+    if bankswitch == 64
+      ORG  $FFE0-bscode_length
+      RORG $FFE0-bscode_length
      endif
    else
      ORG $FFFC

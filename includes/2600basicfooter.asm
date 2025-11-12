@@ -13,19 +13,19 @@
      ORG $8FFC
      RORG $FFFC
    endif
-   if bankswitch == 64
-     ORG  $10FF0
-     RORG $1FFF0
-     lda $ffe0 ; we use wasted space to assist stella with EF format auto-detection
-     ORG  $10FF8
-     RORG $1FFF8
+  if bankswitch == 64
+    ORG  $FFF0
+    RORG $FFF0
+    lda $ffe0 ; we use wasted space to assist stella with EF format auto-detection
+    ORG  $FFF8
+    RORG $FFF8
      ifconst superchip 
        .byte "E","F","S","C"
      else
        .byte "E","F","E","F"
      endif
-     ORG  $10FFC
-     RORG $1FFFC
+    ORG  $FFFC
+    RORG $FFFC
    endif
  else
    ifconst ROM2k

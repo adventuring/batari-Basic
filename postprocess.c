@@ -4,7 +4,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <ctype.h>
 
 // This reads the includes file created by bB and builds the
 // final assembly that will be sent to DASM.
@@ -27,7 +26,6 @@ int main(int argc, char *argv[])
     int writebBfile[17] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
     int i;
     int j;
-    int last_end_bank = 0;
     while ((i = getopt(argc, argv, "i:")) != -1)
     {
 	switch (i)
@@ -93,46 +91,16 @@ int main(int argc, char *argv[])
 		trimmed++;
 	    if (!strncmp(trimmed, "asm", 3) &&
 		(trimmed[3] == '\0' || trimmed[3] == '\n' || trimmed[3] == '\r'))
-	    {
-		last_end_bank = 0;
 		continue;
-	    }
 	    if (!strncmp(trimmed, "end", 3) &&
 		(trimmed[3] == '\0' || trimmed[3] == '\n' || trimmed[3] == '\r'))
-	    {
-		if (!last_end_bank)
-		    continue;
-		last_end_bank = 0;
-	    }
-	    else if (!strncmp(trimmed, "end_bank", 8) && strstr(trimmed, "SET"))
-		last_end_bank = 1;
-	    else
-		last_end_bank = 0;
-	    int export_label = 0;
-	    if (trimmed[0] == '.' && isupper((unsigned char) trimmed[1]) &&
-		(trimmed[2] != '\0') && !isdigit((unsigned char) trimmed[2]))
-		export_label = 1;
+		continue;
 	    if (!writebBfile[bB])
-	    {
 		printf("%s", asmline);
-		if (export_label)
-		    printf("%s\n", trimmed + 1);
-	    }
 	    else
 	    {
-		readbBfile[bB][++writebBfile[bB]] =
-		    (char *) malloc(strlen(asmline) + 3);
+		readbBfile[bB][++writebBfile[bB]] = (char *) malloc(strlen(asmline) + 3);
 		sprintf(readbBfile[bB][writebBfile[bB]], "%s", asmline);
-		if (export_label)
-		{
-		    size_t alias_len = strlen(trimmed + 1);
-		    readbBfile[bB][++writebBfile[bB]] =
-			(char *) malloc(alias_len + 2);
-		    memcpy(readbBfile[bB][writebBfile[bB]], trimmed + 1,
-			   alias_len);
-		    readbBfile[bB][writebBfile[bB]][alias_len] = '\n';
-		    readbBfile[bB][writebBfile[bB]][alias_len + 1] = '\0';
-		}
 	    }
 	}
 	fclose(asmfile);
