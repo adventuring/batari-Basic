@@ -1317,7 +1317,11 @@ void newbank(int bankno)
 	len = len + 4;		//kludge
 
     if (bank == 2)
+    {
 	sprintf(bb_next_redefinition_slot(), "bscode_length = %d", len);
+	/* Also define as EQU constant so ifconst can detect it */
+	printf("bscode_length EQU %d\n", len);
+    }
 
     if (bs == 64)
     {
@@ -1405,8 +1409,34 @@ void newbank(int bankno)
     if (bank == last_bank)
 	printf("; bB.asm file is split here\n");
 
-    // not working yet - need to :
-    // do something I forgot
+    /* Bank reporting - report on the PREVIOUS bank when entering a new bank */
+    /* This executes during compilation, so it works even if build fails later */
+    if (bankno > 1)
+    {
+	int prev_bank = bankno - 1;
+	printf(" ifconst bscode_length\n");
+	printf("  if Bank%dCodeEnds > ($FFE0 - bscode_length)\n", prev_bank);
+	printf("   if Bank%dDataEnds > $F100\n", prev_bank);
+	printf("    echo \"Bank %d: \", [Bank%dDataEnds - $F100]d, \" data, \", [Bank%dCodeEnds - Bank%dDataEnds]d, \" code, \", [Bank%dCodeEnds - ($FFE0 - bscode_length)]d, \" bytes OVERFLOW\"\n",
+	       prev_bank, prev_bank, prev_bank, prev_bank, prev_bank, prev_bank);
+	printf("   else\n");
+	printf("    echo \"Bank %d: \", [0]d, \" data, \", [Bank%dCodeEnds - Bank%dDataEnds]d, \" code, \", [Bank%dCodeEnds - ($FFE0 - bscode_length)]d, \" bytes OVERFLOW\"\n",
+	       prev_bank, prev_bank, prev_bank, prev_bank, prev_bank);
+	printf("   endif\n");
+	printf("  else\n");
+	printf("   if Bank%dDataEnds > $F100\n", prev_bank);
+	printf("    echo \"Bank %d: \", [Bank%dDataEnds - $F100]d, \" data, \", [Bank%dCodeEnds - Bank%dDataEnds]d, \" code, \", [($FFE0 - bscode_length) - Bank%dCodeEnds]d, \" free bytes\"\n",
+	       prev_bank, prev_bank, prev_bank, prev_bank, prev_bank, prev_bank);
+	printf("   else\n");
+	printf("    echo \"Bank %d: \", [0]d, \" data, \", [Bank%dCodeEnds - Bank%dDataEnds]d, \" code, \", [($FFE0 - bscode_length) - Bank%dCodeEnds]d, \" free bytes\"\n",
+	       prev_bank, prev_bank, prev_bank, prev_bank, prev_bank);
+	printf("   endif\n");
+	printf("  endif\n");
+	printf(" else\n");
+	printf("  echo \"Bank %d: bscode_length not defined\"\n", prev_bank);
+	printf(" endif\n");
+	printf("\n");
+    }
 
 }
 

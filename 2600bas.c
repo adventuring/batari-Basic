@@ -423,8 +423,9 @@ int main(int argc, char *argv[])
     /* Bank usage computation within DASM using direct expressions */
     /* Report on all banks at the end of compilation (when all labels are in scope) */
     /* All calculations use $F100 as base (CPU space) and $10000 as end (64KB CPU space) */
+    /* Place reporting BEFORE header_write so it executes even if build fails later */
     
-    /* Report banks 1-16 (all banks for 64KB bankswitching) */
+    /* Report banks 1-15 (Bank 16 reported separately at end) */
     /* All calculations in CPU-space (RORG $F000-$FFFF), not file-space (ORG) */
     /* Bank 1: Labels in ORG space, convert to CPU-space by adding $F000 */
     /* Banks 2-16: Labels already in RORG space */
@@ -432,10 +433,13 @@ int main(int argc, char *argv[])
     /* Data starts at $F100 (CPU-space) */
     /* Physical ROM: Bank 1=$0000, Bank 2=$1000, ..., Bank 16=$F000 */
     int bank_num;
-    for (bank_num = 1; bank_num <= 16; bank_num++)
+    for (bank_num = 1; bank_num <= 15; bank_num++)
     {
+        /* Use 'ifconst' to check if bscode_length is defined */
+        /* If not defined, report that so we know the build can't complete */
         printf("    ifconst bscode_length\n");
-        /* All banks (1-16) use the same calculation - labels are in CPU-space (RORG $F000-$FFFF) */
+        /* All banks (1-15) use the same calculation - labels are in CPU-space (RORG $F000-$FFFF) */
+        /* DASM's 'if' will trigger another pass if symbols are undefined, so no need for ifconst checks on labels */
         printf("     if Bank%dCodeEnds > ($FFE0 - bscode_length)\n", bank_num);
         printf("      if Bank%dDataEnds > $F100\n", bank_num);
         printf("       echo \"Bank %d: \", [Bank%dDataEnds - $F100]d, \" data, \", [Bank%dCodeEnds - Bank%dDataEnds]d, \" code, \", [Bank%dCodeEnds - ($FFE0 - bscode_length)]d, \" bytes OVERFLOW\"\n",
@@ -466,6 +470,28 @@ int main(int argc, char *argv[])
     {
         create_includes(includes_file);
     }
+    
+    /* Bank 16 special case: Report at very end after all code and headers */
+    /* Bank 16 is the last bank and doesn't get a newbank() call after it */
+    printf("    ifconst bscode_length\n");
+    printf("     if Bank16CodeEnds > ($FFE0 - bscode_length)\n");
+    printf("      if Bank16DataEnds > $F100\n");
+    printf("       echo \"Bank 16: \", [Bank16DataEnds - $F100]d, \" data, \", [Bank16CodeEnds - Bank16DataEnds]d, \" code, \", [Bank16CodeEnds - ($FFE0 - bscode_length)]d, \" bytes OVERFLOW\"\n");
+    printf("      else\n");
+    printf("       echo \"Bank 16: \", [0]d, \" data, \", [Bank16CodeEnds - Bank16DataEnds]d, \" code, \", [Bank16CodeEnds - ($FFE0 - bscode_length)]d, \" bytes OVERFLOW\"\n");
+    printf("      endif\n");
+    printf("     else\n");
+    printf("      if Bank16DataEnds > $F100\n");
+    printf("       echo \"Bank 16: \", [Bank16DataEnds - $F100]d, \" data, \", [Bank16CodeEnds - Bank16DataEnds]d, \" code, \", [($FFE0 - bscode_length) - Bank16CodeEnds]d, \" free bytes\"\n");
+    printf("      else\n");
+    printf("       echo \"Bank 16: \", [0]d, \" data, \", [Bank16CodeEnds - Bank16DataEnds]d, \" code, \", [($FFE0 - bscode_length) - Bank16CodeEnds]d, \" free bytes\"\n");
+    printf("      endif\n");
+    printf("     endif\n");
+    printf("    else\n");
+    printf("     echo \"Bank 16: bscode_length not defined\"\n");
+    printf("    endif\n");
+    printf("\n");
+    
     fprintf(stderr, "2600 Basic compilation complete.\n");
     return 0;
 }
