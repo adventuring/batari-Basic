@@ -1284,17 +1284,13 @@ void newbank(int bankno)
 // for 8k bankswitching, most of the libaries will go into bank 2
 // and majority of bB program in bank 1
 
+    /* Bank reporting moved to 2600bas.c at end of compilation to avoid */
+    /* scope issues with local labels. All banks (1-16) are reported there. */
+
     bank = bankno;
     if (bank > last_bank)
 	prerror("bank not supported\n");
 
-    printf(" if ECHO%d\n", bank - 1);
-    printf(" echo \"    \",[(($%X - ((* & $0FFF) | ($%X))))]d , \"bytes of ROM space left in bank %d\")\n", (bank * 0x1000) + 0xFC0, bank * 0x1000, bank);
-    printf(" if (((* & $0FFF) | ($%X)) > ($%X))\n", bank * 0x1000, (bank * 0x1000) + 0xFC0);
-    printf(" echo \"ERROR: Bank %d overflow detected!\"\n", bank);
-    printf(" err\n");
-    printf(" endif\n");
-    printf(" endif\n");
     printf("ECHO%d = 1\n", bank - 1);
 
 
@@ -1337,7 +1333,6 @@ void newbank(int bankno)
 	else
 	    printf(" RORG $%XF4-bscode_length\n", (15 - bs / 2 + 2 * (bank - 1)) * 16 + 15);
     }
-
 
     printf("start_bank%d", bank - 1);
 
@@ -5771,7 +5766,7 @@ void gosub(char **statement)
     }
     else
     {
-		printf(" jsr .%s\n", statement[2]);
+		printf(" jsr %s\n", statement[2]);
 		return;
     }
 

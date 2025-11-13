@@ -11,6 +11,8 @@
 #define BB_VERSION_INFO "batari Basic v1.9 (c)2025\n"
 #define BB_MAX_LINE 2048
 
+int includesfile_user_override = 0;
+
 static char (*bb_define_names)[BB_REDEF_ENTRY_LENGTH] = NULL;
 static char (*bb_define_values)[BB_REDEF_ENTRY_LENGTH] = NULL;
 static size_t bb_define_capacity = 0;
@@ -403,7 +405,7 @@ int main(int argc, char *argv[])
         else
             printf("       echo \"    \",[(DPC_graphics_end - *)]d , \"bytes of ROM space left");
     } else
-	printf("       echo \"    \",[(($10FC0 - ((* & $0FFF) | $10000))]d , \"bytes of ROM space left");
+	printf("       echo \"    \", [(*)]h , \" (\" , [($10000 - *)]d , \" bytes left to $10000)\"");
     if (bs == 8)
 	printf(" in bank 2");
     if (bs == 16)
@@ -412,23 +414,58 @@ int main(int argc, char *argv[])
 	printf(" in graphics bank");
     if (bs == 32)
 	printf(" in bank 8");
-    if (bs == 64) {
-	printf(" in bank 16");
-	printf("\")\n");
-	printf(" if (((* & $0FFF) | $10000) > $10FC0)\n");
-	printf(" echo \"ERROR: Bank 16 overflow detected!\"\n");
-	printf(" err\n");
-	printf(" endif\n");
-    } else {
+    if (bs != 64) {
 	printf("\")\n");
     }
     printf(" endif \n");
     printf("ECHOFIRST = 1\n");
     printf(" \n");
+    /* Bank usage computation within DASM using direct expressions */
+    /* Report on all banks at the end of compilation (when all labels are in scope) */
+    /* All calculations use $F100 as base (CPU space) and $10000 as end (64KB CPU space) */
+    
+    /* Report banks 1-16 (all banks for 64KB bankswitching) */
+    /* All calculations in CPU-space (RORG $F000-$FFFF), not file-space (ORG) */
+    /* Bank 1: Labels in ORG space, convert to CPU-space by adding $F000 */
+    /* Banks 2-16: Labels already in RORG space */
+    /* Bankswitching code boundary: $FFE0 - bscode_length (CPU-space) */
+    /* Data starts at $F100 (CPU-space) */
+    /* Physical ROM: Bank 1=$0000, Bank 2=$1000, ..., Bank 16=$F000 */
+    int bank_num;
+    for (bank_num = 1; bank_num <= 16; bank_num++)
+    {
+        printf("    ifconst bscode_length\n");
+        /* All banks (1-16) use the same calculation - labels are in CPU-space (RORG $F000-$FFFF) */
+        printf("     if Bank%dCodeEnds > ($FFE0 - bscode_length)\n", bank_num);
+        printf("      if Bank%dDataEnds > $F100\n", bank_num);
+        printf("       echo \"Bank %d: \", [Bank%dDataEnds - $F100]d, \" data, \", [Bank%dCodeEnds - Bank%dDataEnds]d, \" code, \", [Bank%dCodeEnds - ($FFE0 - bscode_length)]d, \" bytes OVERFLOW\"\n",
+               bank_num, bank_num, bank_num, bank_num, bank_num, bank_num);
+        printf("      else\n");
+        printf("       echo \"Bank %d: \", [0]d, \" data, \", [Bank%dCodeEnds - Bank%dDataEnds]d, \" code, \", [Bank%dCodeEnds - ($FFE0 - bscode_length)]d, \" bytes OVERFLOW\"\n",
+               bank_num, bank_num, bank_num, bank_num, bank_num);
+        printf("      endif\n");
+        printf("     else\n");
+        printf("      if Bank%dDataEnds > $F100\n", bank_num);
+        printf("       echo \"Bank %d: \", [Bank%dDataEnds - $F100]d, \" data, \", [Bank%dCodeEnds - Bank%dDataEnds]d, \" code, \", [($FFE0 - bscode_length) - Bank%dCodeEnds]d, \" free bytes\"\n",
+               bank_num, bank_num, bank_num, bank_num, bank_num, bank_num);
+        printf("      else\n");
+        printf("       echo \"Bank %d: \", [0]d, \" data, \", [Bank%dCodeEnds - Bank%dDataEnds]d, \" code, \", [($FFE0 - bscode_length) - Bank%dCodeEnds]d, \" free bytes\"\n",
+               bank_num, bank_num, bank_num, bank_num, bank_num);
+        printf("      endif\n");
+        printf("     endif\n");
+        printf("    else\n");
+        printf("     echo \"Bank %d: bscode_length not defined\"\n", bank_num);
+        printf("    endif\n");
+        printf("\n");
+    }
+
     printf(" \n");
     printf(" \n");
     header_write(header, filename);
-    create_includes(includes_file);
+    if (!includesfile_user_override)
+    {
+        create_includes(includes_file);
+    }
     fprintf(stderr, "2600 Basic compilation complete.\n");
     return 0;
 }
