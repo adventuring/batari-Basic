@@ -58,6 +58,7 @@ int pfdata[100][256];
 char sprite_data[5000][50];
 int playfield_index[50];
 char includespath[500];
+extern int includesfile_user_override;
 char constants[MAXCONSTANTS][100];
 char forvar[50][50];
 char forlabel[50][50];
@@ -1501,10 +1502,11 @@ void set_romsize(char *size)
 	if (!strncmp(size, "8kSC\0", 4))
 	{
 	    strcpy(bb_next_redefinition_slot(), "superchip = 1");
-	    create_includes("superchip.inc");
+	    if (!includesfile_user_override)
+		create_includes("superchip.inc");
 	    superchip = 1;
 	}
-	else
+	else if (!includesfile_user_override)
 	    create_includes("bankswitch.inc");
     }
     else if (!strncmp(size, "16k\0", 2))
@@ -1517,10 +1519,11 @@ void set_romsize(char *size)
 	if (!strncmp(size, "16kSC\0", 5))
 	{
 	    strcpy(bb_next_redefinition_slot(), "superchip = 1");
-	    create_includes("superchip.inc");
+	    if (!includesfile_user_override)
+		create_includes("superchip.inc");
 	    superchip = 1;
 	}
-	else
+	else if (!includesfile_user_override)
 	    create_includes("bankswitch.inc");
     }
 
@@ -1536,10 +1539,11 @@ void set_romsize(char *size)
 	if (!strncmp(size, "32kSC\0", 5))
 	{
 	    strcpy(bb_next_redefinition_slot(), "superchip = 1");
-	    create_includes("superchip.inc");
+	    if (!includesfile_user_override)
+		create_includes("superchip.inc");
 	    superchip = 1;
 	}
-	else
+	else if (!includesfile_user_override)
 	    create_includes("bankswitch.inc");
     }
 
@@ -1553,10 +1557,11 @@ void set_romsize(char *size)
 	if (!strncmp(size, "64kSC\0", 5))
 	{
 	    strcpy(bb_next_redefinition_slot(), "superchip = 1");
-	    create_includes("superchip.inc");
+	    if (!includesfile_user_override)
+		create_includes("superchip.inc");
 	    superchip = 1;
 	}
-	else
+	else if (!includesfile_user_override)
 	    create_includes("bankswitch.inc");
     }
 
@@ -1659,7 +1664,7 @@ void create_includes(char *includesfile)
     int i;
     int writeline;
     removeCR(includesfile);
-    if (includesfile_already_done)
+    if (includesfile_already_done && !includesfile_user_override)
 	return;
     includesfile_already_done = 1;
     fullpath[0] = '\0';
@@ -2388,6 +2393,7 @@ void data(char **statement)
     char **data_length;
     char **deallocdata_length;
     int i, j;
+    int data_element_count = 0;  // Count of data elements for length calculation
     data_length = (char **) malloc(sizeof(char *) * 200);
     for (i = 0; i < 200; ++i)
     {
@@ -2429,14 +2435,33 @@ void data(char **statement)
 		i = 200;
 	}
 	if (i < 200)
+	{
 	    printf("	.byte %s\n", data);
+	    // Count the data elements in this line (comma-separated values)
+	    char *token = data;
+	    while (*token)
+	    {
+		// Skip whitespace
+		while (*token && (*token == ' ' || *token == '\t' || *token == ','))
+		    token++;
+		if (*token && *token != '\n' && *token != '\r')
+		{
+		    data_element_count++;
+		    // Skip to next comma or end
+		    while (*token && *token != ',' && *token != '\n' && *token != '\r')
+			token++;
+		}
+		else
+		    break;
+	    }
+	}
     }
     printf(".skip%s\n", statement[0]);
     strcpy(data_length[0], " ");
     strcpy(data_length[1], "const");
     sprintf(data_length[2], "%s_length", statement[2]);
     strcpy(data_length[3], "=");
-    sprintf(data_length[4], ".skip%s-%s", statement[0], statement[2]);
+    sprintf(data_length[4], "%d", data_element_count);  // Use direct count instead of DASM address subtraction
     strcpy(data_length[5], "\n");
     data_length[6][0] = '\0';
     keywords(data_length);
@@ -6011,14 +6036,16 @@ void set(char **statement)
 	{
 	    multisprite = 1;
 	    strcpy(bb_next_redefinition_slot(), "multisprite = 1");
-	    create_includes("multisprite.inc");
+	    if (!includesfile_user_override)
+		create_includes("multisprite.inc");
 	    ROMpf = 1;
 	}
 	else if (!strncmp(statement[3], "DPC\0", 3))
 	{
 		multisprite = 2;
 		strcpy(bb_next_redefinition_slot(), "multisprite = 2");
-    	create_includes("DPCplus.inc");
+    	if (!includesfile_user_override)
+		create_includes("DPCplus.inc");
 	    bs = 28;
 	    last_bank = 7;
 	    strcpy(bb_next_redefinition_slot(), "bankswitch_hotspot = $1FF6");
@@ -6031,7 +6058,8 @@ void set(char **statement)
 		strcpy(bb_next_redefinition_slot(), "multisprite = 2");
 		isPXE = 1;
 		strcpy(bb_next_redefinition_slot(), "PXE = 1");
-		create_includes("PXE.inc");
+		if (!includesfile_user_override)
+			create_includes("PXE.inc");
 	    bs = 28;
 		strcpy(bb_next_redefinition_slot(), "bankswitch_hotspot = $1FF6");
 	    strcpy(bb_next_redefinition_slot(), "bankswitch = 28");
