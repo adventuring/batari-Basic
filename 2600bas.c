@@ -433,12 +433,12 @@ int main(int argc, char *argv[])
     /* Data starts at $F100 (CPU-space) */
     /* Physical ROM: Bank 1=$0000, Bank 2=$1000, ..., Bank 16=$F000 */
     int bank_num;
-    for (bank_num = 1; bank_num <= 15; bank_num++)
+    for (bank_num = 1; bank_num <= 16; bank_num++)
     {
         /* Use 'ifconst' to check if bscode_length is defined */
         /* If not defined, report that so we know the build can't complete */
         printf("    ifconst bscode_length\n");
-        /* All banks (1-15) use the same calculation - labels are in CPU-space (RORG $F000-$FFFF) */
+        /* All banks (1-16) use the same calculation - labels are in CPU-space (RORG $F000-$FFFF) */
         /* DASM's 'if' will trigger another pass if symbols are undefined, so no need for ifconst checks on labels */
         printf("     if Bank%dCodeEnds > ($FFE0 - bscode_length)\n", bank_num);
         printf("      if Bank%dDataEnds > $F100\n", bank_num);
