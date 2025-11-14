@@ -876,15 +876,22 @@ void playfield(char **statement)
     }
     else if (bs != 28)		// RAM pf, as in std_kernel, not DPC+
     {
-	printf("  ifconst pfres\n");
+	// Skip jump to pflabel for ROM playfields - multisprite uses pointers
+	// multisprite>0 means playfield data is in ROM, accessed via PF1pointer/PF2pointer
+	// So inline copy loops are not needed and waste space
+	// Note: multisprite=1 (standard) or multisprite=2 (DPC+/PXE) both use ROM playfields
+	if (!multisprite)
+	{
+	    printf("  ifconst pfres\n");
 //      printf("    ldx #4*pfres-1\n");
-	printf("	  ldx #(%d>pfres)*(pfres*pfwidth-1)+(%d<=pfres)*%d\n", l, l, l * 4 - 1);
-	printf("  else\n");
+	    printf("	  ldx #(%d>pfres)*(pfres*pfwidth-1)+(%d<=pfres)*%d\n", l, l, l * 4 - 1);
+	    printf("  else\n");
 //      printf("    ldx #47\n");
 //      printf("          ldx #%d\n",l*4-1>47?47:l*4-1);
-	printf("	  ldx #((%d*pfwidth-1)*((%d*pfwidth-1)<47))+(47*((%d*pfwidth-1)>=47))\n", l, l, l);
-	printf("  endif\n");
-	printf("	jmp pflabel%d\n", playfield_number);
+	    printf("	  ldx #((%d*pfwidth-1)*((%d*pfwidth-1)<47))+(47*((%d*pfwidth-1)>=47))\n", l, l, l);
+	    printf("  endif\n");
+	    printf("	jmp pflabel%d\n", playfield_number);
+	}
 
 	// no need to align to page boundaries
 
@@ -919,26 +926,33 @@ void playfield(char **statement)
 	    printf("\n endif\n");
 	}
 
-	printf("pflabel%d\n", playfield_number);
-	printf("	lda PF_data%d,x\n", playfield_number);
-	if (superchip)
+	// Skip pflabel loop generation for ROM playfields (multisprite>0)
+	// ROM playfields are accessed via PF1pointer/PF2pointer, so inline copy loops
+	// are not needed and waste space (saves 8 bytes per playfield)
+	// Note: multisprite=1 (standard) or multisprite=2 (DPC+/PXE) both use ROM playfields
+	if (!multisprite)
 	{
+	    printf("pflabel%d\n", playfield_number);
+	    printf("	lda PF_data%d,x\n", playfield_number);
+	    if (superchip)
+	    {
 //        printf("  ifconst pfres\n");
-	    //      printf("      sta playfield+48-pfres*pfwidth-128,x\n");
-	    //    printf("  else\n");
-	    printf("	sta playfield-128,x\n");
-	    //  printf("  endif\n");
-	}
-	else
-	{
+		//      printf("      sta playfield+48-pfres*pfwidth-128,x\n");
+		//    printf("  else\n");
+		printf("	sta playfield-128,x\n");
+		//  printf("  endif\n");
+	    }
+	    else
+	    {
 //        printf("  ifconst pfres\n");
-	    //      printf("      sta playfield+48-pfres*pfwidth,x\n");
-	    //    printf("  else\n");
-	    printf("	sta playfield,x\n");
-	    //  printf("  endif\n");
+		//      printf("      sta playfield+48-pfres*pfwidth,x\n");
+		//    printf("  else\n");
+		printf("	sta playfield,x\n");
+		//  printf("  endif\n");
+	    }
+	    printf("	dex\n");
+	    printf("	bpl pflabel%d\n", playfield_number);
 	}
-	printf("	dex\n");
-	printf("	bpl pflabel%d\n", playfield_number);
 	playfield_number++;
 
     }
@@ -2913,6 +2927,25 @@ void doconst(char **statement)
 	}
     }
     strcpy(constants[numconstants++], statement[2]);	// record to queue
+    
+    // Special handling: if const multisprite is defined, update C variable
+    // This allows const multisprite = 2 to set multisprite for ROM playfield detection
+    // Statement format: const multisprite = 2
+    // statement[1] = "const", statement[2] = "multisprite", statement[3] = "=", statement[4] = "2"
+    if (!strncmp(statement[2], "multisprite\0", 11))
+    {
+	// Look for value after "=" sign
+	int value_pos = 3;
+	while (statement[value_pos][0] != '\0' && statement[value_pos][0] != '=' && value_pos < 10)
+	    value_pos++;
+	if (statement[value_pos][0] == '=' && statement[value_pos + 1][0] != '\0')
+	{
+	    multisprite = (int) atoi(statement[value_pos + 1]);
+	    // Also set ROMpf for multisprite modes (both 1 and 2 use ROM playfields)
+	    if (multisprite > 0)
+		ROMpf = 1;
+	}
+    }
 }
 
 
