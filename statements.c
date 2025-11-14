@@ -1359,6 +1359,20 @@ void newbank(int bankno)
     {
 	if (line[0] == ' ')
 	    printf("%s", line);
+	else if ((line[0] >= 'A' && line[0] <= 'Z') || (line[0] >= 'a' && line[0] <= 'z') || line[0] == '_' || line[0] == '.')
+	{
+	    // Output label definitions (lines starting with letter/underscore/dot) so they're in each bank
+	    // This is needed for BS_return and BS_jsr which must be accessible from all banks
+	    // Skip start_bank labels as they're defined elsewhere
+	    if (strncmp(line, "start_bank", 10) != 0 && strncmp(line, "begin_bscode", 12) != 0)
+	    {
+		char *label_end = line;
+		while (*label_end && *label_end != ' ' && *label_end != '\t' && *label_end != '\n' && *label_end != '\r' && *label_end != ':')
+		    label_end++;
+		if (*label_end == '\n' || *label_end == '\r' || *label_end == ':')
+		    printf("%s", line);  // It's a label definition, output it
+	    }
+	}
     }
 
     fclose(bs_support);
