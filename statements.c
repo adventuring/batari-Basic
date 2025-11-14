@@ -1305,6 +1305,17 @@ void newbank(int bankno)
     if (bank > last_bank)
 	prerror("bank not supported\n");
 
+    /* Bankswitching ORG is now generated in Bank9.bas immediately after Bank9CodeEnds */
+    /* This prevents "Origin Reverse-indexed" error by executing ORG before output position moves */
+    /* Only generate ORG for Bank 1 (no previous bank to generate ORG for) */
+    if (bs == 64 && bankno == 1)
+    {
+	// Bank 1 doesn't have a previous bank to check
+	unsigned int bank_phys_base = (unsigned int)(bank - 1) << 12;
+	printf(" ORG $%04X-bscode_length\n", bank_phys_base + 0x0FE0);
+	printf(" RORG $%04X-bscode_length\n", (0xF000 + 0x0FE0) & 0xFFFF);
+    }
+
     printf("ECHO%d = 1\n", bank - 1);
 
     // Generate bank number constant for 64kSC bankswitching
@@ -1313,28 +1324,6 @@ void newbank(int bankno)
     if (bs == 64)
     {
 	printf("current_bank SET %d\n", bank - 1);  // Bank number (0-based: 0-15)
-    }
-
-    /* Generate bankswitching ORG IMMEDIATELY - must be first thing after Bank9CodeEnds */
-    /* This must happen BEFORE overflow check to prevent "Origin Reverse-indexed" error */
-    /* The ORG executes before any code can move the output position */
-    if (bs == 64 && bankno > 1)
-    {
-	unsigned int bank_phys_base = (unsigned int)(bank - 1) << 12;
-	int prev_bank = bankno - 1;
-	printf(" ifconst bscode_length\n");
-	printf("  if Bank%dCodeEnds <= ($FFE0 - bscode_length)\n", prev_bank);
-	printf("   ORG $%04X-bscode_length\n", bank_phys_base + 0x0FE0);
-	printf("   RORG $%04X-bscode_length\n", (0xF000 + 0x0FE0) & 0xFFFF);
-	printf("  endif\n");
-	printf(" endif\n");
-    }
-    else if (bs == 64)
-    {
-	// Bank 1 doesn't have a previous bank to check
-	unsigned int bank_phys_base = (unsigned int)(bank - 1) << 12;
-	printf(" ORG $%04X-bscode_length\n", bank_phys_base + 0x0FE0);
-	printf(" RORG $%04X-bscode_length\n", (0xF000 + 0x0FE0) & 0xFFFF);
     }
 
     /* Bank overflow check - report on PREVIOUS bank AFTER ORG is generated */
