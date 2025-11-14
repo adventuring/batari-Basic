@@ -19,3 +19,8 @@ noeor
 	eor rand16
  endif
 	RETURN
+
+; Include multiplication and division routines
+; These are called via jsrbank1() from batariBASIC compiler when
+; multiplication/division can't be optimized to bit shifts
+include "div_mul.asm"
