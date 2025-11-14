@@ -1315,9 +1315,56 @@ void newbank(int bankno)
 	printf("current_bank SET %d\n", bank - 1);  // Bank number (0-based: 0-15)
     }
 
-    /* Bank overflow check moved to AFTER bankswitching code generation */
-    /* Bankswitching ORG must execute BEFORE overflow check code to avoid "Origin Reverse-indexed" */
-    /* Overflow reporting happens later after all code is generated */
+    /* Generate bankswitching ORG IMMEDIATELY - must be first thing after Bank9CodeEnds */
+    /* This must happen BEFORE overflow check to prevent "Origin Reverse-indexed" error */
+    /* The ORG executes before any code can move the output position */
+    if (bs == 64 && bankno > 1)
+    {
+	unsigned int bank_phys_base = (unsigned int)(bank - 1) << 12;
+	int prev_bank = bankno - 1;
+	printf(" ifconst bscode_length\n");
+	printf("  if Bank%dCodeEnds <= ($FFE0 - bscode_length)\n", prev_bank);
+	printf("   ORG $%04X-bscode_length\n", bank_phys_base + 0x0FE0);
+	printf("   RORG $%04X-bscode_length\n", (0xF000 + 0x0FE0) & 0xFFFF);
+	printf("  endif\n");
+	printf(" endif\n");
+    }
+    else if (bs == 64)
+    {
+	// Bank 1 doesn't have a previous bank to check
+	unsigned int bank_phys_base = (unsigned int)(bank - 1) << 12;
+	printf(" ORG $%04X-bscode_length\n", bank_phys_base + 0x0FE0);
+	printf(" RORG $%04X-bscode_length\n", (0xF000 + 0x0FE0) & 0xFFFF);
+    }
+
+    /* Bank overflow check - report on PREVIOUS bank AFTER ORG is generated */
+    /* This reports status but doesn't affect ORG execution since it happens after */
+    if (bankno > 1)
+    {
+	int prev_bank = bankno - 1;
+	printf(" ifconst bscode_length\n");
+	printf("  if Bank%dCodeEnds > ($FFE0 - bscode_length)\n", prev_bank);
+	printf("   if Bank%dDataEnds > $F100\n", prev_bank);
+	printf("    echo \"Bank %d: \", [Bank%dDataEnds - $F100]d, \" data, \", [Bank%dCodeEnds - Bank%dDataEnds]d, \" code, \", [Bank%dCodeEnds - ($FFE0 - bscode_length)]d, \" bytes OVERFLOW\"\n",
+	       prev_bank, prev_bank, prev_bank, prev_bank, prev_bank, prev_bank);
+	printf("   else\n");
+	printf("    echo \"Bank %d: \", [0]d, \" data, \", [Bank%dCodeEnds - Bank%dDataEnds]d, \" code, \", [Bank%dCodeEnds - ($FFE0 - bscode_length)]d, \" bytes OVERFLOW\"\n",
+	       prev_bank, prev_bank, prev_bank, prev_bank, prev_bank);
+	printf("   endif\n");
+	printf("  else\n");
+	printf("   if Bank%dDataEnds > $F100\n", prev_bank);
+	printf("    echo \"Bank %d: \", [Bank%dDataEnds - $F100]d, \" data, \", [Bank%dCodeEnds - Bank%dDataEnds]d, \" code, \", [($FFE0 - bscode_length) - Bank%dCodeEnds]d, \" free bytes\"\n",
+	       prev_bank, prev_bank, prev_bank, prev_bank, prev_bank, prev_bank);
+	printf("   else\n");
+	printf("    echo \"Bank %d: \", [0]d, \" data, \", [Bank%dCodeEnds - Bank%dDataEnds]d, \" code, \", [($FFE0 - bscode_length) - Bank%dCodeEnds]d, \" free bytes\"\n",
+	       prev_bank, prev_bank, prev_bank, prev_bank, prev_bank);
+	printf("   endif\n");
+	printf("  endif\n");
+	printf(" else\n");
+	printf("  echo \"Bank %d: bscode_length not defined\"\n", prev_bank);
+	printf(" endif\n");
+	printf("\n");
+    }
 
     // now display banksw.asm file
 
@@ -1351,37 +1398,9 @@ void newbank(int bankno)
 	printf("bscode_length EQU %d\n", len);
     }
 
-    // Generate bankswitching code ORG only if previous bank hasn't overflowed
-    // This prevents "Origin Reverse-indexed" error when code overruns
-    if (bs == 64)
-    {
-	unsigned int bank_phys_base = (unsigned int)(bank - 1) << 12;
-	if (bankno > 1)
-	{
-	    int prev_bank = bankno - 1;
-	    printf(" ifconst bscode_length\n");
-	    printf("  if Bank%dCodeEnds <= ($FFE0 - bscode_length)\n", prev_bank);
-	    printf("   ORG $%04X-bscode_length\n", bank_phys_base + 0x0FE0);
-	    printf("   RORG $%04X-bscode_length\n", (0xF000 + 0x0FE0) & 0xFFFF);
-	    printf("  else\n");
-	    printf("   echo \"ERROR: Bank %d overflowed - cannot generate bankswitching code\"\n", prev_bank);
-	    printf("   rem Skip bankswitching code generation due to overflow\n");
-	    printf("   rem Bank %d CodeEnds would be past $FFE0-bscode_length\n", prev_bank);
-	    printf("  endif\n");
-	    printf(" else\n");
-	    printf("  rem bscode_length not defined - generate bankswitching code unconditionally\n");
-	    printf("  ORG $%04X-bscode_length\n", bank_phys_base + 0x0FE0);
-	    printf("  RORG $%04X-bscode_length\n", (0xF000 + 0x0FE0) & 0xFFFF);
-	    printf(" endif\n");
-	}
-	else
-	{
-	    // Bank 1 doesn't have a previous bank to check
-	    printf(" ORG $%04X-bscode_length\n", bank_phys_base + 0x0FE0);
-	    printf(" RORG $%04X-bscode_length\n", (0xF000 + 0x0FE0) & 0xFFFF);
-	}
-    }
-    else
+    // ORG has already been generated above (before overflow check)
+    // No need to generate it again here
+    if (bs != 64)
     {
 	printf(" ORG $%dFF4-bscode_length\n", bank - 1);
 	if (bs == 28)
@@ -1391,19 +1410,12 @@ void newbank(int bankno)
     }
 
     // Generate bankswitching code only if previous bank hasn't overflowed
-    // For banks 2+, check overflow before generating bankswitching code
-    // Note: This check uses Bank9CodeEnds which is evaluated BEFORE overflow check code
-    // So we need to account for the overflow check code itself when evaluating
+    // Use the same conditional check as the ORG above to keep them in sync
     if (bs == 64 && bankno > 1)
     {
 	int prev_bank = bankno - 1;
 	printf(" ifconst bscode_length\n");
-	// Check if previous bank overflowed - if so, skip bankswitching code generation
-	// to avoid "Origin Reverse-indexed" error
-	printf("  if Bank%dCodeEnds > ($FFE0 - bscode_length)\n", prev_bank);
-	printf("   echo \"ERROR: Bank %d overflowed - cannot generate bankswitching code\"\n", prev_bank);
-	printf("   rem Bank %d overflowed - skipping bankswitching code to prevent ORG error\n", prev_bank);
-	printf("  else\n");
+	printf("  if Bank%dCodeEnds <= ($FFE0 - bscode_length)\n", prev_bank);
     }
 
     printf("start_bank%d", bank - 1);
