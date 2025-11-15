@@ -1280,8 +1280,9 @@ void newbank(int bankno)
     char fullpath[500];
     int len;
 
-    if (bankno == 1)
-	return;			// "bank 1" is ignored
+    bank = bankno;
+    if (bank > last_bank)
+	prerror("bank not supported\n");
 
     fullpath[0] = '\0';
     if (includespath[0])
@@ -1337,14 +1338,14 @@ void newbank(int bankno)
 	if (bs == 64)
 	{
 	    unsigned int prev_bank_phys_base = (unsigned int)(prev_bank - 1) << 12;  /* Bank N's physical base */
-	    /* Set RORG to $F000 to ensure we're in relocatable address space context */
+	    /* Set RORG to $F000 before evaluating labels to ensure correct CPU relocatable address context */
 	    printf(" RORG $F000\n");
 	    printf(" ifconst bscode_length\n");
 	    printf("  if (Bank%dCodeEnds - $%04X) > ($FFE0 - bscode_length)\n", prev_bank, prev_bank_phys_base);
-	    printf("   echo \"Bank %d: \", [(Bank%dDataEnds - $%04X) - $F100]d, \" data, \", [(Bank%dCodeEnds - $%04X) - (Bank%dDataEnds - $%04X)]d, \" code, \", [(Bank%dCodeEnds - $%04X) - ($FFE0 - bscode_length)]d, \" bytes OVERFLOW\"\n",
+	    printf("   echo \"Bank %d: \", [(Bank%dDataEnds - $%04X) - $F100]d, \" data, \", [(Bank%dCodeEnds - $%04X) - (Bank%dDataEnds - $%04X)]d, \" code, \", [bscode_length]d, \" bscode \", [(Bank%dCodeEnds - $%04X) - ($FFE0 - bscode_length)]d, \" bytes OVERFLOW\"\n",
 		   prev_bank, prev_bank, prev_bank_phys_base, prev_bank, prev_bank_phys_base, prev_bank, prev_bank_phys_base, prev_bank, prev_bank_phys_base);
 	    printf("  else\n");
-	    printf("   echo \"Bank %d: \", [(Bank%dDataEnds - $%04X) - $F100]d, \" data, \", [(Bank%dCodeEnds - $%04X) - (Bank%dDataEnds - $%04X)]d, \" code, \", [($FFE0 - bscode_length) - (Bank%dCodeEnds - $%04X)]d, \" free bytes\"\n",
+	    printf("   echo \"Bank %d: \", [(Bank%dDataEnds - $%04X) - $F100]d, \" data, \", [(Bank%dCodeEnds - $%04X) - (Bank%dDataEnds - $%04X)]d, \" code, \", [bscode_length]d, \" bscode \", [($FFE0 - bscode_length) - (Bank%dCodeEnds - $%04X)]d, \" free bytes\"\n",
 		   prev_bank, prev_bank, prev_bank_phys_base, prev_bank, prev_bank_phys_base, prev_bank, prev_bank_phys_base, prev_bank, prev_bank_phys_base);
 	    printf("  endif\n");
 	    printf(" else\n");
