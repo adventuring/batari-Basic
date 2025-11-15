@@ -381,6 +381,20 @@ int main(int argc, char *argv[])
 	    }
 
 	}
+	/* CRITICAL: Define start_bank1 for 64kSC bankswitching right at the start of code output
+	 * This must happen right after the header sets ORG $0000 / RORG $F000
+	 * and before any Bank 1 code is assembled. Use assembly conditional so it only appears when needed.
+	 */
+	if (line == 1)
+	{
+	    printf(" ifconst bankswitch\n");
+	    printf("  if bankswitch == 64\n");
+	    printf("   ifnconst start_bank1\n");
+	    printf("start_bank1\n");
+	    printf("   endif\n");
+	    printf("  endif\n");
+	    printf(" endif\n");
+	}
 	if (strncmp(statement[0], "end\0", 3))
             printf (".%s ;;line %d;; %s\n", statement[0], line, displaycode);
 	else
@@ -396,6 +410,16 @@ int main(int argc, char *argv[])
     }
     bank = bbank();
     bs = bbs();
+    /* CRITICAL: Define start_bank1 for 64kSC bankswitching right at the start
+     * This must happen right after the header sets ORG $0000 / RORG $F000
+     * and before any Bank 1 code is assembled
+     */
+    if (bs == 64)
+    {
+	printf(" ifnconst start_bank1\n");
+	printf("start_bank1\n");
+	printf(" endif\n");
+    }
     barf_sprite_data();
 
     printf(" if ECHOFIRST\n");
@@ -419,13 +443,22 @@ int main(int argc, char *argv[])
     }
     printf(" endif \n");
     printf("ECHOFIRST = 1\n");
-    printf(" \n");
-    /* Bank reporting moved to statements.c newbank() function */
-    /* Banks 1-15 are reported when we encounter the NEXT bank (in newbank())
-     * Bank 16 is reported at the end of newbank(16) since there's no bank 17
-     * This ensures calculations happen in the correct address space
+    /* CRITICAL: Define start_bank1 for 64kSC bankswitching right at the start
+     * This must happen right after the header sets ORG $0000 / RORG $F000
+     * and before any Bank 1 code is assembled
      */
-    
+    if (bs == 64)
+    {
+	printf(" ifnconst start_bank1\n");
+	printf("start_bank1\n");
+	printf(" endif\n");
+    }
+    printf(" \n");
+    /* Bank usage computation within DASM using direct expressions */
+    /* Report on all banks at the end of compilation (when all labels are in scope) */
+    /* All calculations use $F100 as base (CPU space) and $10000 as end (64KB CPU space) */
+    /* Place reporting BEFORE header_write so it executes even if build fails later */
+
     printf(" \n");
     printf(" \n");
     header_write(header, filename);
