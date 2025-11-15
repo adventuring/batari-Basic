@@ -863,6 +863,9 @@ void playfield(char **statement)
 
     if (ROMpf)			// if playfield is in ROM:
     {
+	// Skip pointer-setting code if _suppress_pf_pointer_code is defined
+	// This allows arena data to maintain 24-byte alignment for LoadArenaByIndex
+	printf("	ifnconst _suppress_pf_pointer_code\n");
 	printf("	LDA #<PF1_data%d\n", playfield_number);
 	printf("	STA PF1pointer\n");
 	printf("	LDA #>PF1_data%d\n", playfield_number);
@@ -872,6 +875,7 @@ void playfield(char **statement)
 	printf("	STA PF2pointer\n");
 	printf("	LDA #>PF2_data%d\n", playfield_number);
 	printf("	STA PF2pointer+1\n");
+	printf("	endif\n");
 	playfield_number++;
     }
     else if (bs != 28)		// RAM pf, as in std_kernel, not DPC+
@@ -1400,6 +1404,7 @@ void newbank(int bankno)
 	    else
 	    {
 		/* Other banks - normal calculation */
+		/* All banks have scram shadow at $F000-$F0FF, so data starts at $F100 */
 		printf("    echo \"Bank %d: \", [(Bank%dDataEnds - $%04X) - $F100]d, \" data, \", [(Bank%dCodeEnds - $%04X) - (Bank%dDataEnds - $%04X)]d, \" code, \", [bscode_length]d, \" bscode \", [(Bank%dCodeEnds - $%04X) - ($FFE0 - bscode_length)]d, \" bytes OVERFLOW\"\n",
 		       prev_bank, prev_bank, prev_bank_phys_base, prev_bank, prev_bank_phys_base, prev_bank, prev_bank_phys_base, prev_bank, prev_bank_phys_base);
 		printf("   else\n");
@@ -1408,7 +1413,8 @@ void newbank(int bankno)
 		printf("   endif\n");
 	    }
 	    printf("  else\n");
-	    /* Labels are already in CPU relocatable space ($F000-$FFFF) - use directly */
+	    /* Labels are already in CPU address space ($F000-$FFFF) - use directly */
+	    /* All banks have scram shadow at $F000-$F0FF, so data starts at $F100 */
 	    printf("   if Bank%dCodeEnds > ($FFE0 - bscode_length)\n", prev_bank);
 	    printf("    echo \"Bank %d: \", [Bank%dDataEnds - $F100]d, \" data, \", [Bank%dCodeEnds - Bank%dDataEnds]d, \" code, \", [bscode_length]d, \" bscode \", [Bank%dCodeEnds - ($FFE0 - bscode_length)]d, \" bytes OVERFLOW\"\n",
 		   prev_bank, prev_bank, prev_bank, prev_bank, prev_bank, prev_bank);
@@ -1464,19 +1470,29 @@ void newbank(int bankno)
 	printf("start_bank1\n");
 	printf(" endif\n");
 	
-	// Bank 1 doesn't have a previous bank to check
-	unsigned int bank_phys_base = (unsigned int)(bank - 1) << 12;
-	printf(" ORG $%04X-bscode_length\n", bank_phys_base + 0x0FE0);
-	printf(" RORG $%04X-bscode_length\n", (0xF000 + 0x0FE0) & 0xFFFF);
+	// CRITICAL: Do NOT set Bank 1's bankswitching code ORG here - it will be set in newbank(2)
+	// Setting it here moves the address counter to $FFE0, preventing Bank 1's data section from starting at $F100
+	// Bank 1's bankswitching code ORG must be set AFTER Bank 1's content (data + code) is complete
+	// This happens in newbank(2) when processing the "bank 2" instruction, but BEFORE Bank 2's START ORG
     }
-    /* Set Bank 2's START ORG when "bank 2" instruction is processed */
+    /* Set Bank 1's bankswitching code ORG when "bank 2" instruction is processed */
+    /* This MUST happen BEFORE Bank 2's START ORG, while still in Bank 1's address space */
     else if (bs == 64 && bankno == 2)
     {
-	// Bank 2's START ORG must be set here, before any Bank 2 code is assembled
-	// This ensures Bank 1's address checks (like in Bank1.bas) work correctly
-	unsigned int bank_phys_base = (unsigned int)(bank - 1) << 12;  /* Bank 2's base = $1000 */
-	printf(" ORG $%04X\n", bank_phys_base);
-	printf(" RORG $%04X\n", 0xF000);
+	// Bank 1's bankswitching code ORG must be set here, after Bank 1's content is complete
+	// But BEFORE Bank 2's START ORG is set, so we're still in Bank 1's address space
+	unsigned int bank_phys_base = 0;  /* Bank 1's base = $0000 */
+	printf(" ifconst bscode_length\n");
+	printf("  if Bank1CodeEnds <= ($FFE0 - bscode_length)\n");
+	printf("   ORG $%04X-bscode_length\n", bank_phys_base + 0x0FE0);
+	printf("   RORG $%04X-bscode_length\n", (0xF000 + 0x0FE0) & 0xFFFF);
+	// Include Bank 1's bankswitching code NOW, before Bank 2's START ORG is set
+	// Use #include directive to include Source/Common/BankSwitching.s
+	printf("   include \"Source/Common/BankSwitching.s\"\n");
+	printf("  endif\n");
+	printf(" endif\n");
+	// Bank 2's START ORG will be set later in Step 4 (after vector table)
+	// Do NOT set it here - it will conflict with the logic in Step 4
     }
 
     printf("ECHO%d = 1\n", bank - 1);
@@ -1511,6 +1527,9 @@ void newbank(int bankno)
     // For 64kSC, the size comment already includes the correct size
     // No kludge needed - size is calculated from actual code
 
+    // Rewind file so it can be read again for bankswitching code inclusion
+    rewind(bs_support);
+
     // Define bscode_length for all banks (not just bank 2) so overflow detection works
     // Bank 2 is first bank that uses bankswitching, so define it there
     // Other banks can reference it via ifconst check
@@ -1539,17 +1558,19 @@ void newbank(int bankno)
      * The overflow was already reported in Step 1, so we'll skip ORG if overflowed
      * Must use same label evaluation logic as bank reporting (check for physical offset)
      * For Bank 1, check if labels include Bank 2's offset ($1000) instead of Bank 1's ($0000)
-     * NOTE: Bank 1's bankswitching code ORG is already set in newbank(1) (lines 1440-1445),
-     * so we should NOT set it again in newbank(2) - skip it
+     * NOTE: Bank 1's bankswitching code ORG is now set in newbank(2) when processing Bank 2
+     * This ensures it's set AFTER Bank 1's content (data + code) is complete
+     * Setting it in newbank(1) moved the address counter to $FFE0 too early, preventing data section from starting at $F100
      * Note: Bankswitching code will be written unconditionally below - if overflowed, assembler will error (correct behavior)
      */
     if (bs == 64 && bankno > 1)
     {
 	int prev_bank = bankno - 1;
-	/* Bank 1's bankswitching code ORG is already set in newbank(1), skip it here */
+	/* Bank 1's bankswitching code ORG is already set earlier when bankno == 2 (before Bank 2's START ORG) */
+	/* Skip Bank 1 here - it's already handled */
 	if (prev_bank == 1)
 	{
-	    /* Skip - already set in newbank(1) */
+	    /* Bank 1 already handled earlier - skip */
 	}
 	else
 	{
@@ -1561,18 +1582,7 @@ void newbank(int bankno)
 	if (prev_bank == 1)
 	{
 	    /* Special case for Bank 1: might have Bank 2's offset ($1000) */
-	    printf("   if Bank%dDataEnds >= $10000 && Bank%dDataEnds < $20000\n", prev_bank, prev_bank);
-	    printf("    if (Bank%dCodeEnds - $1000) <= ($FFE0 - bscode_length)\n", prev_bank);
-	    printf("     ORG $%04X-bscode_length\n", bank_phys_base + 0x0FE0);  /* Set to bankswitching code location */
-	    printf("     RORG $%04X-bscode_length\n", (0xF000 + 0x0FE0) & 0xFFFF);  /* Set relocatable bankswitching code location */
-	    printf("    endif\n");
-	    printf("   else\n");
-	    /* Bank 1's offset ($0000) - use normal calculation */
-	    printf("    if (Bank%dCodeEnds - $%04X) <= ($FFE0 - bscode_length)\n", prev_bank, bank_phys_base);
-	    printf("     ORG $%04X-bscode_length\n", bank_phys_base + 0x0FE0);  /* Set to bankswitching code location */
-	    printf("     RORG $%04X-bscode_length\n", (0xF000 + 0x0FE0) & 0xFFFF);  /* Set relocatable bankswitching code location */
-	    printf("    endif\n");
-	    printf("   endif\n");
+	    /* But Bank 1's bankswitching code is already included when bankno == 2, skip here */
 	}
 	else
 	{
@@ -1580,6 +1590,7 @@ void newbank(int bankno)
 	    printf("   if (Bank%dCodeEnds - $%04X) <= ($FFE0 - bscode_length)\n", prev_bank, bank_phys_base);
 	    printf("    ORG $%04X-bscode_length\n", bank_phys_base + 0x0FE0);  /* Set to bankswitching code location */
 	    printf("    RORG $%04X-bscode_length\n", (0xF000 + 0x0FE0) & 0xFFFF);  /* Set relocatable bankswitching code location */
+	    printf("    include \"Source/Common/BankSwitching.s\"\n");  /* Include bankswitching code */
 	    printf("   endif\n");
 	}
 	printf("  else\n");
@@ -1587,32 +1598,11 @@ void newbank(int bankno)
 	printf("   if Bank%dCodeEnds <= ($FFE0 - bscode_length)\n", prev_bank);
 	printf("    ORG $%04X-bscode_length\n", bank_phys_base + 0x0FE0);  /* Set to bankswitching code location */
 	printf("    RORG $%04X-bscode_length\n", (0xF000 + 0x0FE0) & 0xFFFF);  /* Set relocatable bankswitching code location */
+	printf("    include \"Source/Common/BankSwitching.s\"\n");  /* Include bankswitching code */
 	printf("   endif\n");
 	printf("  endif\n");
 	printf(" endif\n");
 	}  /* End of else block for prev_bank != 1 */
-    }
-
-    /* Step 2 (continued): Include bankswitching code WHILE STILL IN Bank N's address space */
-    /* For Bank 1 (or non-64k bankswitching), include bankswitching code unconditionally */
-    while (fgets(line, 500, bs_support))
-    {
-	if (line[0] == ' ')
-	    printf("%s", line);
-	else if ((line[0] >= 'A' && line[0] <= 'Z') || (line[0] >= 'a' && line[0] <= 'z') || line[0] == '_' || line[0] == '.')
-	{
-	    // Output label definitions (lines starting with letter/underscore/dot) so they're in each bank
-	    // This is needed for BS_return and BS_jsr which must be accessible from all banks
-	    // Skip start_bank labels as they're defined elsewhere
-	    if (strncmp(line, "start_bank", 10) != 0 && strncmp(line, "begin_bscode", 12) != 0)
-	    {
-		char *label_end = line;
-		while (*label_end && *label_end != ' ' && *label_end != '\t' && *label_end != '\n' && *label_end != '\r' && *label_end != ':')
-		    label_end++;
-		if (*label_end == '\n' || *label_end == '\r' || *label_end == ':')
-		    printf("%s", line);  // It's a label definition, output it
-	    }
-	}
     }
 
     // Close conditional block for bankswitching code generation
@@ -1664,14 +1654,19 @@ void newbank(int bankno)
     /* Bank N+1's physical base = N << 12 (where N is the bank number in 1-based indexing) */
     /* When newbank(N+1) is called, bank = N+1, so Bank N+1's physical base = N << 12 = (bank - 1) << 12 */
     /* For example: bank=2, Bank 2's base = (2-1) << 12 = $1000 ✓ */
-    /* But Bank 1's START ORG should be set at the very beginning, not here */
-    /* CRITICAL: Don't set Bank 2's START ORG here - it will be set by the "bank 2" instruction */
-    /* Setting it here causes Bank 1's address checks to fail because ORG changes too early */
-    if (bs == 64 && bankno > 2)  /* Skip for Bank 1 and Bank 2 - Bank 1 is set at beginning, Bank 2 will be set by "bank 2" instruction */
+    /* Bank 1's START ORG is set at the very beginning in 2600basicheader.asm */
+    /* Bank 2's START ORG must be set here when bankno == 2, after Bank 1's bankswitching code */
+    /* Banks 3+ also set their START ORG here */
+    if (bs == 64 && bankno >= 2)  /* Set for Bank 2 and higher - Bank 1 is set at beginning */
     {
 	unsigned int bank_phys_base = (unsigned int)(bank - 1) << 12;  /* Bank N+1's physical base when bank = N+1 */
 	printf(" ORG $%04X\n", bank_phys_base);
 	printf(" RORG $%04X\n", 0xF000);
+	// All banks need scram shadow at $F000-$F0FF (256 bytes of $FF)
+	if (superchip)
+	{
+	    printf(" repeat 256\n .byte $ff\n repend\n");
+	}
     }
 
     /* Step 4 (continued): For other bankswitching modes, generate Bank N+1's START ORG here
@@ -1705,8 +1700,11 @@ void newbank(int bankno)
 	else
 	    printf(" RORG $%X00\n", (15 - bs / 2 + 2 * bank) * 16);
     }
-    if (superchip)
+    /* NOTE: Scram (256 bytes of $FF) is already generated in MultiSpriteSuperChip.s at the beginning of Bank 1 */
+    /* Do NOT generate it here - it would be in the wrong place (after bankswitching code) and wrong bank */
+    /* if (superchip)
 	printf(" repeat 256\n .byte $ff\n repend\n");
+    */
 
     if (bank == last_bank)
 	printf("; bB.asm file is split here\n");
@@ -1716,24 +1714,29 @@ void newbank(int bankno)
     /* Removed duplicate reporting here - now done earlier in newbank() function */
 
     /* Report on Bank 16 (last bank) since there's no bank 17 to trigger reporting */
+    /* Use same logic as other banks: check for physical offset and include bscode_length */
     if (bankno == last_bank)
     {
+	unsigned int bank16_phys_base = (unsigned int)(bankno - 1) << 12;  /* Bank 16's physical base = $F000 */
 	printf(" ifconst bscode_length\n");
-	printf("  if Bank%dCodeEnds > ($FFE0 - bscode_length)\n", bankno);
-	printf("   if Bank%dDataEnds > $F100\n", bankno);
-	printf("    echo \"Bank %d: \", [Bank%dDataEnds - $F100]d, \" data, \", [Bank%dCodeEnds - Bank%dDataEnds]d, \" code, \", [Bank%dCodeEnds - ($FFE0 - bscode_length)]d, \" bytes OVERFLOW\"\n",
-	       bankno, bankno, bankno, bankno, bankno, bankno);
+	/* Check if labels include physical offset (> $FFFF) - if so, subtract physical base */
+	printf("  if Bank%dDataEnds > $FFFF\n", bankno);
+	/* Labels include physical offset - subtract Bank 16's physical base ($F000) */
+	printf("   if (Bank%dCodeEnds - $%04X) > ($FFE0 - bscode_length)\n", bankno, bank16_phys_base);
+	printf("    echo \"Bank %d: \", [(Bank%dDataEnds - $%04X) - $F100]d, \" data, \", [(Bank%dCodeEnds - $%04X) - (Bank%dDataEnds - $%04X)]d, \" code, \", [bscode_length]d, \" bscode \", [(Bank%dCodeEnds - $%04X) - ($FFE0 - bscode_length)]d, \" bytes OVERFLOW\"\n",
+	       bankno, bankno, bank16_phys_base, bankno, bank16_phys_base, bankno, bank16_phys_base, bankno, bankno, bank16_phys_base);
 	printf("   else\n");
-	printf("    echo \"Bank %d: \", [0]d, \" data, \", [Bank%dCodeEnds - Bank%dDataEnds]d, \" code, \", [Bank%dCodeEnds - ($FFE0 - bscode_length)]d, \" bytes OVERFLOW\"\n",
-	       bankno, bankno, bankno, bankno, bankno);
+	printf("    echo \"Bank %d: \", [(Bank%dDataEnds - $%04X) - $F100]d, \" data, \", [(Bank%dCodeEnds - $%04X) - (Bank%dDataEnds - $%04X)]d, \" code, \", [bscode_length]d, \" bscode \", [($FFE0 - bscode_length) - (Bank%dCodeEnds - $%04X)]d, \" free bytes\"\n",
+	       bankno, bankno, bank16_phys_base, bankno, bank16_phys_base, bankno, bank16_phys_base, bankno, bankno, bank16_phys_base);
 	printf("   endif\n");
 	printf("  else\n");
-	printf("   if Bank%dDataEnds > $F100\n", bankno);
-	printf("    echo \"Bank %d: \", [Bank%dDataEnds - $F100]d, \" data, \", [Bank%dCodeEnds - Bank%dDataEnds]d, \" code, \", [($FFE0 - bscode_length) - Bank%dCodeEnds]d, \" free bytes\"\n",
+	/* Labels are already in CPU address space ($F000-$FFFF) - use directly */
+	printf("   if Bank%dCodeEnds > ($FFE0 - bscode_length)\n", bankno);
+	printf("    echo \"Bank %d: \", [Bank%dDataEnds - $F100]d, \" data, \", [Bank%dCodeEnds - Bank%dDataEnds]d, \" code, \", [bscode_length]d, \" bscode \", [Bank%dCodeEnds - ($FFE0 - bscode_length)]d, \" bytes OVERFLOW\"\n",
 	       bankno, bankno, bankno, bankno, bankno, bankno);
 	printf("   else\n");
-	printf("    echo \"Bank %d: \", [0]d, \" data, \", [Bank%dCodeEnds - Bank%dDataEnds]d, \" code, \", [($FFE0 - bscode_length) - Bank%dCodeEnds]d, \" free bytes\"\n",
-	       bankno, bankno, bankno, bankno, bankno);
+	printf("    echo \"Bank %d: \", [Bank%dDataEnds - $F100]d, \" data, \", [Bank%dCodeEnds - Bank%dDataEnds]d, \" code, \", [bscode_length]d, \" bscode \", [($FFE0 - bscode_length) - Bank%dCodeEnds]d, \" free bytes\"\n",
+	       bankno, bankno, bankno, bankno, bankno, bankno);
 	printf("   endif\n");
 	printf("  endif\n");
 	printf(" else\n");
