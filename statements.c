@@ -1305,29 +1305,18 @@ void newbank(int bankno)
     if (bank > last_bank)
 	prerror("bank not supported\n");
 
-    /* Bankswitching ORG is now generated in Bank9.bas immediately after Bank9CodeEnds */
-    /* This prevents "Origin Reverse-indexed" error by executing ORG before output position moves */
-    /* Only generate ORG for Bank 1 (no previous bank to generate ORG for) */
-    if (bs == 64 && bankno == 1)
-    {
-	// Bank 1 doesn't have a previous bank to check
-	unsigned int bank_phys_base = (unsigned int)(bank - 1) << 12;
-	printf(" ORG $%04X-bscode_length\n", bank_phys_base + 0x0FE0);
-	printf(" RORG $%04X-bscode_length\n", (0xF000 + 0x0FE0) & 0xFFFF);
-    }
+    /* CORRECT ORDER (per plan): 
+     * 1. Bank reporting for PREVIOUS bank (Bank N) - must happen while still in Bank N's address space
+     * 2. Generate ORG for bankswitching code at $FFE0-bscode_length
+     * 3. Include bankswitching code (BS_jsr/BS_return at consistent addresses)
+     * 4. Generate ORG for Bank N+1's START
+     * 5. Start Bank N+1 content
+     */
 
-    printf("ECHO%d = 1\n", bank - 1);
-
-    // Generate bank number constant for 64kSC bankswitching
-    // This allows bankswitching code to encode bank number in return addresses
-    // Use SET instead of EQU so it can be redefined for each bank
-    if (bs == 64)
-    {
-	printf("current_bank SET %d\n", bank - 1);  // Bank number (0-based: 0-15)
-    }
-
-    /* Bank overflow check - report on PREVIOUS bank AFTER ORG is generated */
-    /* This reports status but doesn't affect ORG execution since it happens after */
+    /* Step 1: Bank reporting for PREVIOUS bank (Bank N) 
+     * This must happen FIRST, before any ORG statements change address space
+     * BankNCodeEnds is already defined in source file, so we can calculate now
+     */
     if (bankno > 1)
     {
 	int prev_bank = bankno - 1;
@@ -1353,6 +1342,28 @@ void newbank(int bankno)
 	printf("  echo \"Bank %d: bscode_length not defined\"\n", prev_bank);
 	printf(" endif\n");
 	printf("\n");
+    }
+
+    /* Step 2: Generate ORG for bankswitching code at $FFE0-bscode_length
+     * This ensures BS_jsr and BS_return are at the same addresses in every bank
+     */
+    /* Only generate ORG for Bank 1's bankswitching code here (special case) */
+    if (bs == 64 && bankno == 1)
+    {
+	// Bank 1 doesn't have a previous bank to check
+	unsigned int bank_phys_base = (unsigned int)(bank - 1) << 12;
+	printf(" ORG $%04X-bscode_length\n", bank_phys_base + 0x0FE0);
+	printf(" RORG $%04X-bscode_length\n", (0xF000 + 0x0FE0) & 0xFFFF);
+    }
+
+    printf("ECHO%d = 1\n", bank - 1);
+
+    // Generate bank number constant for 64kSC bankswitching
+    // This allows bankswitching code to encode bank number in return addresses
+    // Use SET instead of EQU so it can be redefined for each bank
+    if (bs == 64)
+    {
+	printf("current_bank SET %d\n", bank - 1);  // Bank number (0-based: 0-15)
     }
 
     // now display banksw.asm file
@@ -1398,14 +1409,23 @@ void newbank(int bankno)
 	    printf(" RORG $%XF4-bscode_length\n", (15 - bs / 2 + 2 * (bank - 1)) * 16 + 15);
     }
 
-    // Generate bankswitching code only if previous bank hasn't overflowed
-    // For banks 2-16, generate ORG for THIS bank's bankswitching code at $FFE0-bscode_length
-    // This ensures BS_jsr and BS_return are at the same addresses in every bank
-    // Use bank (current bank) not bank-1 for the physical base address
+    /* Step 2: Generate ORG for Bank N+1's START FIRST (switches to Bank N+1's address space)
+     * This must happen BEFORE generating bankswitching code ORG to prevent "Origin Reverse-indexed" error
+     */
+    if (bs == 64)
+    {
+	unsigned int bank_phys_base = (unsigned int)bank << 12;
+	printf(" ORG $%04X\n", bank_phys_base);
+	printf(" RORG $%04X\n", 0xF000);
+    }
+    
+    /* Step 2 (continued): NOW generate ORG for THIS bank's (Bank N+1's) bankswitching code
+     * We're now in Bank N+1's address space, so we can generate the ORG correctly
+     */
     if (bs == 64 && bankno > 1)
     {
 	int prev_bank = bankno - 1;
-	unsigned int bank_phys_base = (unsigned int)(bank - 1) << 12;
+	unsigned int bank_phys_base = (unsigned int)(bank - 1) << 12;  // Current bank's base address
 	printf(" ifconst bscode_length\n");
 	printf("  if Bank%dCodeEnds <= ($FFE0 - bscode_length)\n", prev_bank);
 	printf("   ORG $%04X-bscode_length\n", bank_phys_base + 0x0FE0);
@@ -1444,6 +1464,7 @@ void newbank(int bankno)
 
     fclose(bs_support);
 
+    /* Step 3: Generate vector table for PREVIOUS bank (Bank N) */
     if (bs == 64)
     {
 	unsigned int bank_phys_base = (unsigned int)(bank - 1) << 12;
@@ -1462,14 +1483,10 @@ void newbank(int bankno)
     printf(" .word (start_bank%d & $ffff)\n", bank - 1);
     printf(" .word (start_bank%d & $ffff)\n", bank - 1);
 
-    // now end
-    if (bs == 64)
-    {
-	unsigned int bank_phys_base = (unsigned int)bank << 12;
-	printf(" ORG $%04X\n", bank_phys_base);
-	printf(" RORG $%04X\n", 0xF000);
-    }
-    else
+    /* Step 4: Bank N+1's START ORG already generated above (Step 2) for 64kSC
+     * For other bankswitching modes, generate it here
+     */
+    if (bs != 64)
     {
 	printf(" ORG $%1X000\n", bank);
 	if (bs == 28)
