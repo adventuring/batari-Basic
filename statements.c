@@ -1419,6 +1419,11 @@ void newbank(int bankno)
 	printf(" RORG $%04X\n", 0xF000);
     }
     
+    /* Define start_bank label RIGHT AFTER Bank N+1's START ORG, before bankswitching code ORG
+     * This ensures the label is in the correct relocatable address space (RORG $F000)
+     */
+    printf("start_bank%d\n", bank - 1);
+    
     /* Step 2 (continued): NOW generate ORG for THIS bank's (Bank N+1's) bankswitching code
      * We're now in Bank N+1's address space, so we can generate the ORG correctly
      */
@@ -1431,8 +1436,6 @@ void newbank(int bankno)
 	printf("   ORG $%04X-bscode_length\n", bank_phys_base + 0x0FE0);
 	printf("   RORG $%04X-bscode_length\n", (0xF000 + 0x0FE0) & 0xFFFF);
     }
-
-    printf("start_bank%d", bank - 1);
 
 
     while (fgets(line, 500, bs_support))
