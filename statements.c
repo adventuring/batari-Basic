@@ -1469,6 +1469,15 @@ void newbank(int bankno)
 	printf(" ORG $%04X-bscode_length\n", bank_phys_base + 0x0FE0);
 	printf(" RORG $%04X-bscode_length\n", (0xF000 + 0x0FE0) & 0xFFFF);
     }
+    /* Set Bank 2's START ORG when "bank 2" instruction is processed */
+    else if (bs == 64 && bankno == 2)
+    {
+	// Bank 2's START ORG must be set here, before any Bank 2 code is assembled
+	// This ensures Bank 1's address checks (like in Bank1.bas) work correctly
+	unsigned int bank_phys_base = (unsigned int)(bank - 1) << 12;  /* Bank 2's base = $1000 */
+	printf(" ORG $%04X\n", bank_phys_base);
+	printf(" RORG $%04X\n", 0xF000);
+    }
 
     printf("ECHO%d = 1\n", bank - 1);
 
@@ -1656,7 +1665,9 @@ void newbank(int bankno)
     /* When newbank(N+1) is called, bank = N+1, so Bank N+1's physical base = N << 12 = (bank - 1) << 12 */
     /* For example: bank=2, Bank 2's base = (2-1) << 12 = $1000 ✓ */
     /* But Bank 1's START ORG should be set at the very beginning, not here */
-    if (bs == 64 && bankno > 1)  /* Skip for Bank 1 - it's already set at the beginning */
+    /* CRITICAL: Don't set Bank 2's START ORG here - it will be set by the "bank 2" instruction */
+    /* Setting it here causes Bank 1's address checks to fail because ORG changes too early */
+    if (bs == 64 && bankno > 2)  /* Skip for Bank 1 and Bank 2 - Bank 1 is set at beginning, Bank 2 will be set by "bank 2" instruction */
     {
 	unsigned int bank_phys_base = (unsigned int)(bank - 1) << 12;  /* Bank N+1's physical base when bank = N+1 */
 	printf(" ORG $%04X\n", bank_phys_base);
