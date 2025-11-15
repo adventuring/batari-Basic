@@ -11,6 +11,8 @@
 #define BB_VERSION_INFO "batari Basic v1.9 (c)2025\n"
 #define BB_MAX_LINE 2048
 
+int includesfile_user_override = 0;
+
 static char (*bb_define_names)[BB_REDEF_ENTRY_LENGTH] = NULL;
 static char (*bb_define_values)[BB_REDEF_ENTRY_LENGTH] = NULL;
 static size_t bb_define_capacity = 0;
@@ -379,6 +381,20 @@ int main(int argc, char *argv[])
 	    }
 
 	}
+	/* CRITICAL: Define start_bank1 for 64kSC bankswitching right at the start of code output
+	 * This must happen right after the header sets ORG $0000 / RORG $F000
+	 * and before any Bank 1 code is assembled. Use assembly conditional so it only appears when needed.
+	 */
+	if (line == 1)
+	{
+	    printf(" ifconst bankswitch\n");
+	    printf("  if bankswitch == 64\n");
+	    printf("   ifnconst start_bank1\n");
+	    printf("start_bank1\n");
+	    printf("   endif\n");
+	    printf("  endif\n");
+	    printf(" endif\n");
+	}
 	if (strncmp(statement[0], "end\0", 3))
             printf (".%s ;;line %d;; %s\n", statement[0], line, displaycode);
 	else
@@ -394,6 +410,16 @@ int main(int argc, char *argv[])
     }
     bank = bbank();
     bs = bbs();
+    /* CRITICAL: Define start_bank1 for 64kSC bankswitching right at the start
+     * This must happen right after the header sets ORG $0000 / RORG $F000
+     * and before any Bank 1 code is assembled
+     */
+    if (bs == 64)
+    {
+	printf(" ifnconst start_bank1\n");
+	printf("start_bank1\n");
+	printf(" endif\n");
+    }
     barf_sprite_data();
 
     printf(" if ECHOFIRST\n");
@@ -403,7 +429,7 @@ int main(int argc, char *argv[])
         else
             printf("       echo \"    \",[(DPC_graphics_end - *)]d , \"bytes of ROM space left");
     } else
-	printf("       echo \"    \",[(($10FC0 - ((* & $0FFF) | $10000))]d , \"bytes of ROM space left");
+	printf("       echo \"    \", [(*)]h , \" (\" , [($10000 - *)]d , \" bytes left to $10000)\"");
     if (bs == 8)
 	printf(" in bank 2");
     if (bs == 16)
@@ -412,23 +438,35 @@ int main(int argc, char *argv[])
 	printf(" in graphics bank");
     if (bs == 32)
 	printf(" in bank 8");
-    if (bs == 64) {
-	printf(" in bank 16");
-	printf("\")\n");
-	printf(" if (((* & $0FFF) | $10000) > $10FC0)\n");
-	printf(" echo \"ERROR: Bank 16 overflow detected!\"\n");
-	printf(" err\n");
-	printf(" endif\n");
-    } else {
+    if (bs != 64) {
 	printf("\")\n");
     }
     printf(" endif \n");
     printf("ECHOFIRST = 1\n");
+    /* CRITICAL: Define start_bank1 for 64kSC bankswitching right at the start
+     * This must happen right after the header sets ORG $0000 / RORG $F000
+     * and before any Bank 1 code is assembled
+     */
+    if (bs == 64)
+    {
+	printf(" ifnconst start_bank1\n");
+	printf("start_bank1\n");
+	printf(" endif\n");
+    }
     printf(" \n");
+    /* Bank usage computation within DASM using direct expressions */
+    /* Report on all banks at the end of compilation (when all labels are in scope) */
+    /* All calculations use $F100 as base (CPU space) and $10000 as end (64KB CPU space) */
+    /* Place reporting BEFORE header_write so it executes even if build fails later */
+
     printf(" \n");
     printf(" \n");
     header_write(header, filename);
-    create_includes(includes_file);
+    if (!includesfile_user_override)
+    {
+        create_includes(includes_file);
+    }
+    
     fprintf(stderr, "2600 Basic compilation complete.\n");
     return 0;
 }

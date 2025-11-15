@@ -40,8 +40,8 @@ BANK16_END = $FFC0
      RORG $1000
   endif
   if bankswitch == 64
-     ORG $1000
-     RORG $1000
+     ORG $0000
+     RORG $F000
   endif
  else
    ORG $F000
