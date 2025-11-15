@@ -1399,12 +1399,17 @@ void newbank(int bankno)
     }
 
     // Generate bankswitching code only if previous bank hasn't overflowed
-    // Use the same conditional check as the ORG above to keep them in sync
+    // For banks 2-16, generate ORG for THIS bank's bankswitching code at $FFE0-bscode_length
+    // This ensures BS_jsr and BS_return are at the same addresses in every bank
+    // Use bank (current bank) not bank-1 for the physical base address
     if (bs == 64 && bankno > 1)
     {
 	int prev_bank = bankno - 1;
+	unsigned int bank_phys_base = (unsigned int)(bank - 1) << 12;
 	printf(" ifconst bscode_length\n");
 	printf("  if Bank%dCodeEnds <= ($FFE0 - bscode_length)\n", prev_bank);
+	printf("   ORG $%04X-bscode_length\n", bank_phys_base + 0x0FE0);
+	printf("   RORG $%04X-bscode_length\n", (0xF000 + 0x0FE0) & 0xFFFF);
     }
 
     printf("start_bank%d", bank - 1);
