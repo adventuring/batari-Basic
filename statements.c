@@ -1341,12 +1341,38 @@ void newbank(int bankno)
 	    /* Set RORG to $F000 before evaluating labels to ensure correct CPU relocatable address context */
 	    printf(" RORG $F000\n");
 	    printf(" ifconst bscode_length\n");
-	    printf("  if (Bank%dCodeEnds - $%04X) > ($FFE0 - bscode_length)\n", prev_bank, prev_bank_phys_base);
-	    printf("   echo \"Bank %d: \", [(Bank%dDataEnds - $%04X) - $F100]d, \" data, \", [(Bank%dCodeEnds - $%04X) - (Bank%dDataEnds - $%04X)]d, \" code, \", [bscode_length]d, \" bscode \", [(Bank%dCodeEnds - $%04X) - ($FFE0 - bscode_length)]d, \" bytes OVERFLOW\"\n",
+	    /* Check if labels include physical offset (> $FFFF) - if so, subtract physical base (Bank 2 method) */
+	    printf("  if Bank%dCodeEnds > $FFFF\n", prev_bank);
+	    /* Labels include physical offset - subtract physical base (Bank 2 case) */
+	    printf("   if (Bank%dCodeEnds - $%04X) > ($FFE0 - bscode_length)\n", prev_bank, prev_bank_phys_base);
+	    printf("    echo \"Bank %d: \", [(Bank%dDataEnds - $%04X) - $F100]d, \" data, \", [(Bank%dCodeEnds - $%04X) - (Bank%dDataEnds - $%04X)]d, \" code, \", [bscode_length]d, \" bscode \", [(Bank%dCodeEnds - $%04X) - ($FFE0 - bscode_length)]d, \" bytes OVERFLOW\"\n",
 		   prev_bank, prev_bank, prev_bank_phys_base, prev_bank, prev_bank_phys_base, prev_bank, prev_bank_phys_base, prev_bank, prev_bank_phys_base);
+	    printf("   else\n");
+	    printf("    echo \"Bank %d: \", [(Bank%dDataEnds - $%04X) - $F100]d, \" data, \", [(Bank%dCodeEnds - $%04X) - (Bank%dDataEnds - $%04X)]d, \" code, \", [bscode_length]d, \" bscode \", [($FFE0 - bscode_length) - (Bank%dCodeEnds - $%04X)]d, \" free bytes\"\n",
+		   prev_bank, prev_bank, prev_bank_phys_base, prev_bank, prev_bank_phys_base, prev_bank, prev_bank_phys_base, prev_bank, prev_bank_phys_base);
+	    printf("   endif\n");
 	    printf("  else\n");
-	    printf("   echo \"Bank %d: \", [(Bank%dDataEnds - $%04X) - $F100]d, \" data, \", [(Bank%dCodeEnds - $%04X) - (Bank%dDataEnds - $%04X)]d, \" code, \", [bscode_length]d, \" bscode \", [($FFE0 - bscode_length) - (Bank%dCodeEnds - $%04X)]d, \" free bytes\"\n",
-		   prev_bank, prev_bank, prev_bank_phys_base, prev_bank, prev_bank_phys_base, prev_bank, prev_bank_phys_base, prev_bank, prev_bank_phys_base);
+	    /* Labels are <= $FFFF - may be offsets (0-$FFF) or absolute ($F000-$FFFF) */
+	    /* If >= $F000, already absolute; otherwise add $F000 to get absolute CPU address */
+	    printf("   if Bank%dDataEnds >= $F000\n", prev_bank);
+	    /* Already absolute - use directly */
+	    printf("    if Bank%dCodeEnds > ($FFE0 - bscode_length)\n", prev_bank);
+	    printf("     echo \"Bank %d: \", [Bank%dDataEnds - $F100]d, \" data, \", [Bank%dCodeEnds - Bank%dDataEnds]d, \" code, \", [bscode_length]d, \" bscode \", [Bank%dCodeEnds - ($FFE0 - bscode_length)]d, \" bytes OVERFLOW\"\n",
+		   prev_bank, prev_bank, prev_bank, prev_bank, prev_bank, prev_bank);
+	    printf("    else\n");
+	    printf("     echo \"Bank %d: \", [Bank%dDataEnds - $F100]d, \" data, \", [Bank%dCodeEnds - Bank%dDataEnds]d, \" code, \", [bscode_length]d, \" bscode \", [($FFE0 - bscode_length) - Bank%dCodeEnds]d, \" free bytes\"\n",
+		   prev_bank, prev_bank, prev_bank, prev_bank, prev_bank, prev_bank);
+	    printf("    endif\n");
+	    printf("   else\n");
+	    /* Offset (0-$FFF) - add $F000 to get absolute CPU address */
+	    printf("    if (Bank%dCodeEnds + $F000) > ($FFE0 - bscode_length)\n", prev_bank);
+	    printf("     echo \"Bank %d: \", [(Bank%dDataEnds + $F000) - $F100]d, \" data, \", [(Bank%dCodeEnds + $F000) - (Bank%dDataEnds + $F000)]d, \" code, \", [bscode_length]d, \" bscode \", [(Bank%dCodeEnds + $F000) - ($FFE0 - bscode_length)]d, \" bytes OVERFLOW\"\n",
+		   prev_bank, prev_bank, prev_bank, prev_bank, prev_bank, prev_bank);
+	    printf("    else\n");
+	    printf("     echo \"Bank %d: \", [(Bank%dDataEnds + $F000) - $F100]d, \" data, \", [(Bank%dCodeEnds + $F000) - (Bank%dDataEnds + $F000)]d, \" code, \", [bscode_length]d, \" bscode \", [($FFE0 - bscode_length) - (Bank%dCodeEnds + $F000)]d, \" free bytes\"\n",
+		   prev_bank, prev_bank, prev_bank, prev_bank, prev_bank, prev_bank);
+	    printf("    endif\n");
+	    printf("   endif\n");
 	    printf("  endif\n");
 	    printf(" else\n");
 	    printf("  echo \"Bank %d: bscode_length not defined\"\n", prev_bank);
