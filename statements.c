@@ -1587,19 +1587,32 @@ void newbank(int bankno)
 	else
 	{
 	    /* Other banks - subtract their physical base */
-	    printf("   if (Bank%dCodeEnds - $%04X) <= ($FFE0 - bscode_length)\n", prev_bank, bank_phys_base);
-	    printf("    ORG $%04X-bscode_length\n", bank_phys_base + 0x0FE0);  /* Set to bankswitching code location */
-	    printf("    RORG $%04X-bscode_length\n", (0xF000 + 0x0FE0) & 0xFFFF);  /* Set relocatable bankswitching code location */
-	    printf("    include \"Source/Common/BankSwitching.s\"\n");  /* Include bankswitching code */
+	    /* CRITICAL: Only set bankswitching code ORG if BankNCodeEnds hasn't overflowed past bankswitching code location */
+	    /* If BankNCodeEnds includes next bank's physical offset, it has overflowed and we can't set ORG backwards */
+	    unsigned int bank_bscode_phys = bank_phys_base + 0x0FE0;
+	    unsigned int bank_bscode_rorg = (0xF000 + 0x0FE0) & 0xFFFF;
+	    unsigned int bank_next_phys = bank_phys_base + 0x1000;  /* Next bank's file space start */
+	    /* Check if BankNCodeEnds is still in this bank's file space (hasn't overflowed to next bank) */
+	    printf("   if (Bank%dCodeEnds - $%04X) < $%04X && (Bank%dCodeEnds - $%04X) <= ($FFE0 - bscode_length)\n", 
+		   prev_bank, bank_phys_base, bank_next_phys, prev_bank, bank_phys_base);
+	    printf("    ORG $%04X-bscode_length\n", bank_bscode_phys);  /* Set file offset to bankswitching code location */
+	    printf("    RORG $%04X-bscode_length\n", bank_bscode_rorg);  /* Set CPU address to bankswitching code location */
+	    printf("    include \"Source/Common/BankSwitching.s\"\n");  /* Include bankswitching code only if not overflowed */
 	    printf("   endif\n");
 	}
 	printf("  else\n");
 	/* Labels are in CPU relocatable space - use directly */
-	printf("   if Bank%dCodeEnds <= ($FFE0 - bscode_length)\n", prev_bank);
-	printf("    ORG $%04X-bscode_length\n", bank_phys_base + 0x0FE0);  /* Set to bankswitching code location */
-	printf("    RORG $%04X-bscode_length\n", (0xF000 + 0x0FE0) & 0xFFFF);  /* Set relocatable bankswitching code location */
-	printf("    include \"Source/Common/BankSwitching.s\"\n");  /* Include bankswitching code */
-	printf("   endif\n");
+	/* CRITICAL: Only set bankswitching code ORG if BankNCodeEnds hasn't overflowed past bankswitching code location */
+	/* If BankNCodeEnds is past bankswitching code location, we can't set ORG backwards */
+	{
+	    unsigned int bank_bscode_phys = bank_phys_base + 0x0FE0;
+	    unsigned int bank_bscode_rorg = (0xF000 + 0x0FE0) & 0xFFFF;
+	    printf("   if Bank%dCodeEnds <= ($FFE0 - bscode_length)\n", prev_bank);
+	    printf("    ORG $%04X-bscode_length\n", bank_bscode_phys);  /* Set file offset to bankswitching code location */
+	    printf("    RORG $%04X-bscode_length\n", bank_bscode_rorg);  /* Set CPU address to bankswitching code location */
+	    printf("    include \"Source/Common/BankSwitching.s\"\n");  /* Include bankswitching code only if not overflowed */
+	    printf("   endif\n");
+	}
 	printf("  endif\n");
 	printf(" endif\n");
 	}  /* End of else block for prev_bank != 1 */
